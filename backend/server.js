@@ -13,6 +13,8 @@ app.use(express.json());
 connectDB();
 
 app.use("/api/ingest", require("./routes/ingest"));
+app.use("/api/health", require("./routes/health"));
+
 
 const PORT = process.env.PORT || 5000;
 
