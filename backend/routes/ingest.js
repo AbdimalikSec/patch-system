@@ -1,14 +1,32 @@
-const express = require("express");
-const router = express.Router();
+const router = require("express").Router();
 const Asset = require("../models/Asset");
 
-router.post("/", async (req, res) => {
+// POST /api/ingest/asset
+router.post("/asset", async (req, res) => {
   try {
-    const asset = new Asset(req.body);
-    await asset.save();
-    res.status(201).json({ message: "Data ingested successfully" });
+    const { hostname, os, ip, source, raw } = req.body;
+
+    if (!hostname || !os) {
+      return res.status(400).json({ ok: false, error: "hostname and os are required" });
+    }
+
+    const doc = await Asset.findOneAndUpdate(
+      { hostname },
+      {
+        hostname,
+        os,
+        ip,
+        source: source || "collector",
+        raw: raw || req.body,
+        lastSeen: new Date(),
+      },
+      { upsert: true, new: true }
+    );
+
+    return res.json({ ok: true, assetId: doc._id });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Ingest error:", err);
+    return res.status(500).json({ ok: false, error: "server_error" });
   }
 });
 
