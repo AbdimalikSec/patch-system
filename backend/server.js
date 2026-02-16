@@ -14,6 +14,8 @@ connectDB();
 
 app.use("/api/ingest", require("./routes/ingest"));
 app.use("/api/health", require("./routes/health"));
+app.use("/api/patches", require("./routes/patches"));
+app.use("/api/compliance", require("./routes/compliance"));
 
 
 const PORT = process.env.PORT || 5000;
