@@ -18,6 +18,7 @@ app.use("/api/patches", require("./routes/patches"));
 app.use("/api/compliance", require("./routes/compliance"));
 app.use("/api/meta", require("./routes/meta"));
 app.use("/api/risk", require("./routes/risk"));
+app.use("/api/assets", require("./routes/assets"));
 
 const PORT = process.env.PORT || 5000;
 
