@@ -88,4 +88,44 @@ router.get("/compliance/failed", async (req, res) => {
   }
 });
 
+router.get("/compliance/summary", async (req, res) => {
+  try {
+    const assets = await Asset.find({}).lean();
+
+    const out = [];
+    for (const a of assets) {
+      const c = await Compliance.findOne({ assetHostname: a.hostname })
+        .sort({ collectedAt: -1 })
+        .lean();
+
+      if (!c) {
+        out.push({
+          hostname: a.hostname,
+          status: "No Data",
+          score: null,
+          failedCount: null,
+          collectedAt: null,
+        });
+        continue;
+      }
+
+      const failedCount = c.failedCount ?? (Array.isArray(c.failed) ? c.failed.length : 0);
+
+      out.push({
+        hostname: a.hostname,
+        status: failedCount > 0 ? "Non-Compliant" : "Compliant",
+        score: c.score ?? null,
+        failedCount,
+        collectedAt: c.collectedAt,
+      });
+    }
+
+    res.json({ ok: true, data: out });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: "server_error" });
+  }
+});
+
+
 module.exports = router;
