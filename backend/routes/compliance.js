@@ -4,16 +4,25 @@ const Compliance = require("../models/Compliance");
 // POST /api/compliance/ingest
 router.post("/ingest", async (req, res) => {
   try {
-    const { assetHostname, failedCount, failed, score, raw } = req.body;
+    const { assetHostname, failedCount, failed, score, raw, source, collectedAt } = req.body;
     if (!assetHostname) return res.status(400).json({ ok: false, error: "assetHostname required" });
 
     const doc = await Compliance.create({
       assetHostname,
-      failedCount: failedCount ?? (Array.isArray(failed) ? failed.length : 0),
-      failed: failed || [],
-      score: score ?? 100,
+      source: source || "wazuh",
+      collectedAt: collectedAt ? new Date(collectedAt) : new Date(),
+
+      // If failedCount is null, keep it null (meaning "no data")
+      failedCount: (failedCount === null || failedCount === undefined)
+        ? (Array.isArray(failed) ? failed.length : 0)
+        : failedCount,
+
+      failed: Array.isArray(failed) ? failed : [],
+
+      // If score is null, keep it null (meaning "no data")
+      score: (score === null || score === undefined) ? 100 : score,
+
       raw: raw || req.body,
-      collectedAt: new Date(),
     });
 
     res.json({ ok: true, complianceId: doc._id });
@@ -23,10 +32,20 @@ router.post("/ingest", async (req, res) => {
   }
 });
 
-// GET /api/compliance/latest/:hostname
+// GET /api/compliance/latest/:hostname  (case-insensitive exact match)
 router.get("/latest/:hostname", async (req, res) => {
-  const doc = await Compliance.findOne({ assetHostname: req.params.hostname }).sort({ collectedAt: -1 });
-  res.json({ ok: true, data: doc });
+  try {
+    const host = req.params.hostname;
+
+    const doc = await Compliance.findOne({
+      assetHostname: { $regex: new RegExp(`^${host}$`, "i") }
+    }).sort({ collectedAt: -1 });
+
+    res.json({ ok: true, data: doc });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: "server_error" });
+  }
 });
 
 module.exports = router;
