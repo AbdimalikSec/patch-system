@@ -94,7 +94,7 @@ router.get("/compliance/summary", async (req, res) => {
 
     const out = [];
     for (const a of assets) {
-      const c = await Compliance.findOne({ assetHostname: a.hostname })
+      const c = await Compliance.findOne({ assetHostname: { $regex: new RegExp(`^${hostname}$`, "i") } })
         .sort({ collectedAt: -1 })
         .lean();
 
