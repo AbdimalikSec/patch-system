@@ -38,15 +38,19 @@ function computeRisk({ patch, compliance, meta }) {
 // GET /api/assets/overview
 router.get("/overview", async (req, res) => {
   try {
-    // get all known assets
     const assets = await Asset.find({}).sort({ lastSeen: -1 });
 
-    // build one row per asset
     const rows = await Promise.all(
       assets.map(async (a) => {
         const [patch, compliance, meta] = await Promise.all([
-          Patch.findOne({ assetHostname: a.hostname }).sort({ collectedAt: -1 }),
-          Compliance.findOne({ assetHostname: a.hostname }).sort({ collectedAt: -1 }),
+          Patch.findOne({
+            assetHostname: { $regex: new RegExp(`^${a.hostname}$`, "i") }
+          }).sort({ collectedAt: -1 }),
+
+          Compliance.findOne({
+            assetHostname: { $regex: new RegExp(`^${a.hostname}$`, "i") }
+          }).sort({ collectedAt: -1 }),
+
           AssetMeta.findOne({ hostname: a.hostname }),
         ]);
 
@@ -60,15 +64,25 @@ router.get("/overview", async (req, res) => {
           lastSeen: a.lastSeen,
 
           patch: patch
-            ? { collectedAt: patch.collectedAt, missingCount: patch.missingCount }
+            ? {
+                collectedAt: patch.collectedAt,
+                missingCount: patch.missingCount,
+              }
             : null,
 
           compliance: compliance
-            ? { collectedAt: compliance.collectedAt, failedCount: compliance.failedCount, score: compliance.score }
+            ? {
+                collectedAt: compliance.collectedAt,
+                failedCount: compliance.failedCount,
+                score: compliance.score,
+              }
             : null,
 
           meta: meta
-            ? { role: meta.role, criticality: meta.criticality }
+            ? {
+                role: meta.role,
+                criticality: meta.criticality,
+              }
             : null,
 
           risk,
@@ -82,5 +96,6 @@ router.get("/overview", async (req, res) => {
     res.status(500).json({ ok: false, error: "server_error" });
   }
 });
+
 
 module.exports = router;
