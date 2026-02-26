@@ -1,30 +1,21 @@
 const mongoose = require("mongoose");
 
 /**
- * AssetMeta
+ * AssetMeta — stores contextual metadata about each asset.
  *
- * Stores static/semi-static context about each asset that cannot be derived
- * from patch or compliance collectors alone.
+ * Criticality (0.0–1.0) is the primary risk multiplier in the risk engine.
+ * Values are defined per NIST SP 800-30 asset valuation guidelines:
  *
- * CRITICALITY SCALE (0.0 – 1.0)
- * ──────────────────────────────
- * 0.9 – 1.0  Critical   Infrastructure backbone (DC, core servers)
- * 0.7 – 0.8  High       Important servers, security management plane
- * 0.4 – 0.6  Medium     Standard workstations, user endpoints
- * 0.1 – 0.3  Low        Test/lab machines, isolated systems
- *
- * EXPOSURE TIER
- * ─────────────
- * internal_critical  : No internet access, but compromise = catastrophic
- * internal_standard  : Normal internal workstation/server
- * isolated_lab       : Intentionally isolated test environment
- * internet_facing    : Directly reachable from internet (future use)
+ *   1.0  Critical  — Domain controllers, authentication servers
+ *   0.8  High      — Security infrastructure, patch servers
+ *   0.5  Medium    — Standard workstations, staff endpoints
+ *   0.3  Low       — Test machines, non-production systems
  */
 const AssetMetaSchema = new mongoose.Schema(
   {
-    hostname:     { type: String, required: true, unique: true, index: true },
+    hostname:        { type: String, required: true, unique: true, index: true },
 
-    // Role classification
+    // Asset classification
     role: {
       type: String,
       default: "workstation",
@@ -33,29 +24,19 @@ const AssetMetaSchema = new mongoose.Schema(
         "domain_controller",
         "server",
         "security_server",
-        "security_testing",
-        "network_device",
+        "test_machine",
+        "other",
       ],
     },
+    os_type:         { type: String, default: "unknown" }, // windows | linux | unknown
+    owner:           { type: String, default: "IT" },
 
-    owner:        { type: String, default: "IT" },
+    // Risk engine inputs
+    criticality:     { type: Number, default: 0.5, min: 0, max: 1 },
+    internet_facing: { type: Boolean, default: false },
 
-    // Core risk weight — see scale above
-    criticality:  { type: Number, default: 0.4, min: 0, max: 1 },
-
-    // Exposure context
-    exposureTier: {
-      type: String,
-      default: "internal_standard",
-      enum: [
-        "internet_facing",
-        "internal_critical",
-        "internal_standard",
-        "isolated_lab",
-      ],
-    },
-
-    notes: { type: String, default: "" },
+    // Free-text notes (shown in UI and used in reports)
+    notes:           { type: String, default: "" },
   },
   { timestamps: true }
 );
