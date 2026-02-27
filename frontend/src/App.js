@@ -6,6 +6,7 @@ import Assets from "./pages/Assets";
 import Backlog from "./pages/Backlog";
 import Compliance from "./pages/Compliance";
 import AssetDetails from "./pages/AssetDetails";
+import Evaluation from "./pages/Evaluation";
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
         <Route path="/asset/:hostname" element={<AssetDetails />} />
         <Route path="/backlog" element={<Backlog />} />
         <Route path="/compliance" element={<Compliance />} />
+        <Route path="/evaluation" element={<Evaluation />} />
       </Routes>
     </BrowserRouter>
   );
