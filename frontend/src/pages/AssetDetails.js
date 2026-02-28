@@ -27,10 +27,7 @@ function resultBadge(result) {
 
 function TabButton({ active, children, onClick }) {
   return (
-    <button
-      className={`btn-tab ${active ? "active" : ""}`}
-      onClick={onClick}
-    >
+    <button className={`btn-tab ${active ? "active" : ""}`} onClick={onClick}>
       {children}
     </button>
   );
@@ -54,17 +51,17 @@ function Modal({ open, title, onClose, children }) {
 export default function AssetDetails() {
   const { hostname } = useParams();
 
-  const [riskRes, setRiskRes] = useState(null);
+  const [riskRes, setRiskRes]   = useState(null);
   const [patchRes, setPatchRes] = useState(null);
-  const [compRes, setCompRes] = useState(null);
+  const [compRes, setCompRes]   = useState(null);
   const [checksRes, setChecksRes] = useState([]);
 
-  const [err, setErr] = useState("");
+  const [err, setErr]         = useState("");
   const [loading, setLoading] = useState(true);
 
-  const [tab, setTab] = useState("compliance");
-  const [cisQuery, setCisQuery] = useState("");
-  const [cisPage, setCisPage] = useState(1);
+  const [tab, setTab]               = useState("compliance");
+  const [cisQuery, setCisQuery]     = useState("");
+  const [cisPage, setCisPage]       = useState(1);
   const [resultFilter, setResultFilter] = useState("all");
   const pageSize = 20;
   const [selectedCheck, setSelectedCheck] = useState(null);
@@ -74,14 +71,12 @@ export default function AssetDetails() {
       try {
         setLoading(true);
         setErr("");
-
         const [r, p, c, ch] = await Promise.all([
           axios.get(`${API}/api/risk/latest/${encodeURIComponent(hostname)}`),
           axios.get(`${API}/api/patches/latest/${encodeURIComponent(hostname)}`),
           axios.get(`${API}/api/compliance/latest/${encodeURIComponent(hostname)}`),
           axios.get(`${API}/api/compliance/checks/${encodeURIComponent(hostname)}`),
         ]);
-
         setRiskRes(r.data);
         setPatchRes(p.data);
         setCompRes(c.data);
@@ -94,27 +89,35 @@ export default function AssetDetails() {
     })();
   }, [hostname]);
 
-  const risk = riskRes?.risk || { score: 0, priority: "Low", reasons: [] };
-  const inputs = riskRes?.inputs || {};
-  const patch = patchRes?.data || null;
-  const comp = compRes?.data || null;
+  const risk   = riskRes?.risk || { score: 0, priority: "Low", reasons: [] };
+  const patch  = patchRes?.data || null;
+  const comp   = compRes?.data || null;
 
-  const agentStatus = comp?.raw?.agent?.status;
+  const agentStatus   = comp?.raw?.agent?.status;
   const agentLastSeen = comp?.raw?.agent?.lastKeepAlive || comp?.raw?.agent?.dateAdd || null;
-  const osName = comp?.raw?.agent?.os?.name || patch?.os || "-";
-  const ipAddr = comp?.raw?.agent?.ip || patch?.raw?.ip || "-";
+  const osName        = comp?.raw?.agent?.os?.name || patch?.os || "-";
+  const ipAddr        = comp?.raw?.agent?.ip || patch?.raw?.ip || "-";
 
   const patchList = useMemo(() => {
     if (!patch?.missing) return [];
     return Array.isArray(patch.missing) ? patch.missing : [];
   }, [patch]);
 
+  // ── Live counts from checksRes (always up to date) ─────────────────────────
+  const countAll    = checksRes.length;
+  const countFailed = checksRes.filter((x) => x.result === "failed").length;
+  const countPassed = checksRes.filter((x) => x.result === "passed").length;
+  const countNA     = checksRes.filter((x) => x.result === "not applicable").length;
+
+  // Score = passed / (total - not_applicable) * 100
+  const scaScore = (countAll - countNA) > 0
+    ? Math.round((countPassed / (countAll - countNA)) * 100)
+    : null;
+
+  // Always use live failed count from checksRes — never the stale Compliance doc
+  const scaFailedCount = countFailed;
+
   const scaPolicy = comp?.raw?.summary?.policy || null;
-  const scaTotal = comp?.raw?.summary?.total ?? comp?.raw?.sca?.data?.affected_items?.[0]?.total_checks ?? null;
-  const scaScore = comp?.score ?? comp?.raw?.summary?.score ?? comp?.raw?.sca?.data?.affected_items?.[0]?.score ?? null;
-  const scaFailedCount = comp?.failedCount ?? comp?.raw?.summary?.failedCount ?? comp?.raw?.sca?.data?.affected_items?.[0]?.fail ?? null;
-  const scaPassCount = comp?.raw?.sca?.data?.affected_items?.[0]?.pass ?? null;
-  const scaInvalidCount = comp?.raw?.sca?.data?.affected_items?.[0]?.invalid ?? null;
 
   const filteredChecks = useMemo(() => {
     let list = checksRes;
@@ -124,8 +127,8 @@ export default function AssetDetails() {
     const q = cisQuery.trim().toLowerCase();
     if (q) {
       list = list.filter((x) =>
-        String(x.checkId || "").toLowerCase().includes(q) ||
-        String(x.title || "").toLowerCase().includes(q) ||
+        String(x.checkId   || "").toLowerCase().includes(q) ||
+        String(x.title     || "").toLowerCase().includes(q) ||
         String(x.rationale || "").toLowerCase().includes(q) ||
         String(x.remediation || "").toLowerCase().includes(q)
       );
@@ -151,26 +154,19 @@ export default function AssetDetails() {
     } else {
       plan.push("Patch in next regular maintenance cycle.");
     }
-
     if ((patch?.missingCount ?? 0) > 0) {
       plan.push(`Review ${patch.missingCount} pending updates/packages and prioritize security updates first.`);
     } else {
       plan.push("No missing patch items reported by collectors (verify collectors ran recently).");
     }
-
-    if ((comp?.failedCount ?? 0) > 0) {
-      plan.push(`Address ${comp.failedCount} CIS/SCA compliance failures before next audit review.`);
+    if (scaFailedCount > 0) {
+      plan.push(`Address ${scaFailedCount} CIS/SCA compliance failures before next audit review.`);
     } else {
       plan.push("Compliance shows no failures or no SCA data collected yet.");
     }
     plan.push("Re-run collectors and validate risk score decreases.");
     return plan;
-  }, [risk.priority, patch?.missingCount, comp?.failedCount]);
-
-  const countAll = checksRes.length;
-  const countFailed = checksRes.filter((x) => x.result === "failed").length;
-  const countPassed = checksRes.filter((x) => x.result === "passed").length;
-  const countNA = checksRes.filter((x) => x.result === "not applicable").length;
+  }, [risk.priority, patch?.missingCount, scaFailedCount]);
 
   const headerRight = (
     <span className={statusBadge(agentStatus)}>
@@ -191,10 +187,11 @@ export default function AssetDetails() {
               <div>
                 <div style={{ fontSize: "22px", fontWeight: 900, letterSpacing: "-0.5px" }}>{hostname}</div>
                 <div className="muted" style={{ marginTop: 6, fontSize: "14px" }}>
-                  <span style={{ color: "var(--accent)" }}>{osName}</span> &nbsp;•&nbsp; IP: {ipAddr} &nbsp;•&nbsp; Last collection: {agentLastSeen ? new Date(agentLastSeen).toLocaleString() : "-"}
+                  <span style={{ color: "var(--accent)" }}>{osName}</span>
+                  &nbsp;•&nbsp; IP: {ipAddr}
+                  &nbsp;•&nbsp; Last collection: {agentLastSeen ? new Date(agentLastSeen).toLocaleString() : "-"}
                 </div>
               </div>
-
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <span className={badge(risk.priority)}>
                   {risk.priority || "Low"} — Score {risk.score ?? 0}
@@ -208,35 +205,33 @@ export default function AssetDetails() {
               <div className="cardLabel">Risk Score</div>
               <div className="cardValue" style={{ color: "var(--accent)" }}>{risk.score ?? 0}</div>
             </div>
-
             <div className="card">
               <div className="cardLabel">Priority</div>
               <div className="cardValue">
                 <span className={badge(risk.priority)}>{risk.priority || "Low"}</span>
               </div>
             </div>
-
             <div className="card">
               <div className="cardLabel">Missing updates</div>
               <div className="cardValue">{patch?.missingCount ?? "-"}</div>
             </div>
-
             <div className="card">
               <div className="cardLabel">CIS score</div>
               <div className="cardValue">{scaScore ?? "-"}</div>
             </div>
-
             <div className="card">
               <div className="cardLabel">CIS failed</div>
-              <div className="cardValue" style={{ color: (scaFailedCount > 0 ? "hsl(350, 100%, 65%)" : "inherit") }}>{scaFailedCount ?? "-"}</div>
+              <div className="cardValue" style={{ color: scaFailedCount > 0 ? "hsl(350, 100%, 65%)" : "inherit" }}>
+                {scaFailedCount}
+              </div>
             </div>
           </div>
 
           <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
             <TabButton active={tab === "compliance"} onClick={() => setTab("compliance")}>Compliance (CIS)</TabButton>
-            <TabButton active={tab === "patch"} onClick={() => setTab("patch")}>Patch Backlog</TabButton>
-            <TabButton active={tab === "risk"} onClick={() => setTab("risk")}>Risk Intelligence</TabButton>
-            <TabButton active={tab === "plan"} onClick={() => setTab("plan")}>Remediation Plan</TabButton>
+            <TabButton active={tab === "patch"}      onClick={() => setTab("patch")}>Patch Backlog</TabButton>
+            <TabButton active={tab === "risk"}       onClick={() => setTab("risk")}>Risk Intelligence</TabButton>
+            <TabButton active={tab === "plan"}       onClick={() => setTab("plan")}>Remediation Plan</TabButton>
           </div>
 
           <div className="tabContent">
@@ -246,10 +241,11 @@ export default function AssetDetails() {
                   <div>
                     <div style={{ fontWeight: 800, fontSize: 16 }}>CIS / SCA Compliance Details</div>
                     <div className="muted" style={{ marginTop: 6, fontSize: "13px" }}>
-                      Policy: <span style={{ color: "var(--text)" }}>{scaPolicy?.name || comp?.raw?.sca?.data?.affected_items?.[0]?.name || "-"}</span>
+                      Policy: <span style={{ color: "var(--text)" }}>
+                        {scaPolicy?.name || comp?.raw?.sca?.data?.affected_items?.[0]?.name || "-"}
+                      </span>
                     </div>
                   </div>
-
                   <input
                     className="input"
                     placeholder="Search check ID, title, or remediation..."
@@ -261,10 +257,10 @@ export default function AssetDetails() {
 
                 <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
                   {[
-                    { key: "all", label: `All Checks (${countAll})` },
-                    { key: "failed", label: `Failed (${countFailed})` },
-                    { key: "passed", label: `Passed (${countPassed})` },
-                    { key: "not applicable", label: `N/A (${countNA})` },
+                    { key: "all",             label: `All Checks (${countAll})`  },
+                    { key: "failed",          label: `Failed (${countFailed})`   },
+                    { key: "passed",          label: `Passed (${countPassed})`   },
+                    { key: "not applicable",  label: `N/A (${countNA})`          },
                   ].map((f) => (
                     <button
                       key={f.key}
@@ -298,9 +294,7 @@ export default function AssetDetails() {
                             <tr key={c.checkId}>
                               <td className="mono" style={{ color: "var(--accent)" }}>{c.checkId}</td>
                               <td style={{ fontWeight: 500 }}>{c.title}</td>
-                              <td>
-                                <span className={resultBadge(c.result)}>{c.result}</span>
-                              </td>
+                              <td><span className={resultBadge(c.result)}>{c.result}</span></td>
                               <td style={{ textAlign: "center" }}>
                                 <button className="btn" style={{ padding: "6px 12px", fontSize: "12px" }} onClick={() => setSelectedCheck(c)}>
                                   View
@@ -312,19 +306,11 @@ export default function AssetDetails() {
                       </table>
 
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderTop: "1px solid var(--line)" }}>
-                        <button
-                          className="btn"
-                          onClick={() => setCisPage((p) => Math.max(1, p - 1))}
-                          disabled={cisPage <= 1}
-                        >
+                        <button className="btn" onClick={() => setCisPage((p) => Math.max(1, p - 1))} disabled={cisPage <= 1}>
                           Previous
                         </button>
                         <div className="muted" style={{ fontSize: "13px" }}>Page {cisPage} of {totalPages}</div>
-                        <button
-                          className="btn"
-                          onClick={() => setCisPage((p) => Math.min(totalPages, p + 1))}
-                          disabled={cisPage >= totalPages}
-                        >
+                        <button className="btn" onClick={() => setCisPage((p) => Math.min(totalPages, p + 1))} disabled={cisPage >= totalPages}>
                           Next
                         </button>
                       </div>
@@ -385,7 +371,12 @@ export default function AssetDetails() {
                   <div style={{ display: "grid", gap: 16 }}>
                     {recommendedPlan.map((x, i) => (
                       <div key={i} style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-                        <div style={{ width: 24, height: 24, borderRadius: "50%", background: "var(--accent-muted)", color: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", fontWeight: 800, flexShrink: 0 }}>
+                        <div style={{
+                          width: 24, height: 24, borderRadius: "50%",
+                          background: "var(--accent-muted)", color: "var(--accent)",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: "12px", fontWeight: 800, flexShrink: 0
+                        }}>
                           {i + 1}
                         </div>
                         <div style={{ fontSize: "15px", lineHeight: "1.6" }}>{x}</div>
@@ -408,7 +399,6 @@ export default function AssetDetails() {
                   <div style={{ fontSize: "18px", fontWeight: 800, marginBottom: 8 }}>{selectedCheck.title}</div>
                   <span className={resultBadge(selectedCheck.result)}>{selectedCheck.result}</span>
                 </div>
-
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
                   <div>
                     <div className="cardLabel">Description</div>
@@ -423,23 +413,16 @@ export default function AssetDetails() {
                     </div>
                   </div>
                 </div>
-
                 <div>
                   <div className="cardLabel">Remediation</div>
                   <div style={{
-                    padding: 24,
-                    background: "var(--accent-muted)",
-                    borderRadius: "var(--radius-md)",
-                    border: "1px solid var(--accent-border)",
-                    lineHeight: "1.6",
-                    color: "#fff",
-                    fontWeight: 600,
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.2)"
+                    padding: 24, background: "var(--accent-muted)", borderRadius: "var(--radius-md)",
+                    border: "1px solid var(--accent-border)", lineHeight: "1.6",
+                    color: "#fff", fontWeight: 600, boxShadow: "0 4px 12px rgba(0,0,0,0.2)"
                   }}>
                     {selectedCheck.remediation || "No remediation steps provided."}
                   </div>
                 </div>
-
                 {Array.isArray(selectedCheck.command) && selectedCheck.command.length > 0 && (
                   <div>
                     <div className="cardLabel">Verification Command</div>

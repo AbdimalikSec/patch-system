@@ -5,7 +5,6 @@ import Layout from "../Layout";
 
 const API = process.env.REACT_APP_API_BASE || "http://localhost:5000";
 
-// ── Score gauge ───────────────────────────────────────────────────────────────
 function ScoreGauge({ score }) {
   const [animated, setAnimated] = useState(0);
   useEffect(() => {
@@ -16,11 +15,9 @@ function ScoreGauge({ score }) {
   const color = score >= 70 ? "hsl(130,60%,50%)"
               : score >= 40 ? "hsl(45,100%,50%)"
               : "hsl(350,100%,65%)";
-
-  const pct = animated;
   const r = 15.9;
   const circ = 2 * Math.PI * r;
-  const dash = (pct / 100) * circ;
+  const dash = (animated / 100) * circ;
 
   return (
     <div style={{ position: "relative", width: 72, height: 72 }}>
@@ -30,17 +27,13 @@ function ScoreGauge({ score }) {
           strokeDasharray={`${dash} ${circ - dash}`} strokeLinecap="round"
           style={{ transition: "stroke-dasharray 1s cubic-bezier(0.4,0,0.2,1)" }} />
       </svg>
-      <div style={{
-        position: "absolute", inset: 0, display: "flex", alignItems: "center",
-        justifyContent: "center", flexDirection: "column"
-      }}>
+      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div style={{ fontSize: 14, fontWeight: 900, color }}>{score}%</div>
       </div>
     </div>
   );
 }
 
-// ── Status badge ──────────────────────────────────────────────────────────────
 function StatusBadge({ status }) {
   const colors = {
     "Compliant":     { bg: "hsla(130,60%,50%,0.15)", border: "hsl(130,60%,50%)", text: "hsl(130,60%,50%)" },
@@ -57,23 +50,28 @@ function StatusBadge({ status }) {
   );
 }
 
-// ── Asset compliance card ─────────────────────────────────────────────────────
 function AssetCard({ row, checks, loadingChecks }) {
   const [expanded, setExpanded] = useState(false);
 
-  const passedCount  = row.failedCount != null ? (checks?.filter(c => c.result === "passed").length  ?? 0) : 0;
-  const totalChecks  = checks?.length ?? 0;
-  const failedChecks = checks?.filter(c => c.result === "failed")  ?? [];
-  const topFailed    = failedChecks.slice(0, 5);
+  // All counts derived from live checks array — never from stale API summary
+  const checksArr   = checks ?? [];
+  const totalChecks = checksArr.length;
+  const failedArr   = checksArr.filter(c => c.result === "failed");
+  const passedCount = checksArr.filter(c => c.result === "passed").length;
+  const failedCount = failedArr.length;
+  const naCount     = checksArr.filter(c => c.result === "not applicable").length;
+  const denom       = totalChecks - naCount;
+  const score       = denom > 0 ? Math.round((passedCount / denom) * 100) : (row.score ?? 0);
+  const status      = totalChecks === 0 ? "No Data" : failedCount > 0 ? "Non-Compliant" : "Compliant";
+  const topFailed   = failedArr.slice(0, 5);
 
   return (
     <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-      {/* Header row */}
       <div style={{
         display: "flex", alignItems: "center", gap: 20, padding: "18px 24px",
         borderBottom: expanded ? "1px solid var(--line)" : "none"
       }}>
-        <ScoreGauge score={row.score ?? 0} />
+        <ScoreGauge score={score} />
 
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
@@ -81,46 +79,37 @@ function AssetCard({ row, checks, loadingChecks }) {
               style={{ fontWeight: 800, fontSize: 16, color: "var(--text)", textDecoration: "none" }}>
               {row.hostname}
             </Link>
-            <StatusBadge status={row.status} />
+            <StatusBadge status={status} />
           </div>
-
-          {/* Pass/fail bar */}
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div style={{ flex: 1, height: 6, background: "var(--line)", borderRadius: 3, overflow: "hidden" }}>
               <div style={{
-                height: "100%",
-                width: `${row.score ?? 0}%`,
-                background: row.score >= 70 ? "hsl(130,60%,50%)" : row.score >= 40 ? "hsl(45,100%,50%)" : "hsl(350,100%,65%)",
+                height: "100%", width: `${score}%`,
+                background: score >= 70 ? "hsl(130,60%,50%)" : score >= 40 ? "hsl(45,100%,50%)" : "hsl(350,100%,65%)",
                 borderRadius: 3, transition: "width 1s ease"
               }} />
             </div>
             <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>
-              {row.failedCount ?? 0} failed
-              {totalChecks > 0 && ` · ${passedCount} passed · ${totalChecks} total`}
+              {failedCount} failed · {passedCount} passed · {totalChecks} total
             </div>
           </div>
         </div>
 
         <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
           <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 22, fontWeight: 900, color: "hsl(350,100%,65%)" }}>{row.failedCount ?? "-"}</div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: "hsl(350,100%,65%)" }}>{failedCount}</div>
             <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Failed</div>
           </div>
           <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 22, fontWeight: 900, color: "hsl(130,60%,50%)" }}>{passedCount || "-"}</div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: "hsl(130,60%,50%)" }}>{passedCount}</div>
             <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Passed</div>
           </div>
-          <button
-            onClick={() => setExpanded(e => !e)}
-            className="btn"
-            style={{ padding: "6px 14px", fontSize: 12 }}
-          >
+          <button onClick={() => setExpanded(e => !e)} className="btn" style={{ padding: "6px 14px", fontSize: 12 }}>
             {expanded ? "Hide" : "Details"}
           </button>
         </div>
       </div>
 
-      {/* Expanded checks */}
       {expanded && (
         <div style={{ padding: "16px 24px" }}>
           {loadingChecks && <div className="muted" style={{ fontSize: 13 }}>Loading checks...</div>}
@@ -130,7 +119,7 @@ function AssetCard({ row, checks, loadingChecks }) {
           {!loadingChecks && topFailed.length > 0 && (
             <>
               <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                Top Failed Checks (showing 5 of {failedChecks.length})
+                Top Failed Checks (showing 5 of {failedArr.length})
               </div>
               <div style={{ display: "grid", gap: 8 }}>
                 {topFailed.map((c, i) => (
@@ -138,9 +127,7 @@ function AssetCard({ row, checks, loadingChecks }) {
                     padding: "10px 14px", background: "var(--surface)", borderRadius: 8,
                     borderLeft: "3px solid hsl(350,100%,65%)", display: "flex", gap: 12, alignItems: "flex-start"
                   }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", minWidth: 50, marginTop: 1 }}>
-                      #{c.checkId}
-                    </div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", minWidth: 50, marginTop: 1 }}>#{c.checkId}</div>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{c.title}</div>
                       {c.rationale && (
@@ -154,7 +141,7 @@ function AssetCard({ row, checks, loadingChecks }) {
               </div>
               <div style={{ marginTop: 12 }}>
                 <Link to={`/asset/${encodeURIComponent(row.hostname)}`} className="btn" style={{ fontSize: 12 }}>
-                  View all {failedChecks.length} failed checks →
+                  View all {failedArr.length} failed checks →
                 </Link>
               </div>
             </>
@@ -165,14 +152,13 @@ function AssetCard({ row, checks, loadingChecks }) {
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
 export default function Compliance() {
-  const [rows, setRows]           = useState([]);
-  const [checksMap, setChecksMap] = useState({});
-  const [loadingMain, setLoadingMain] = useState(true);
+  const [rows, setRows]                   = useState([]);
+  const [checksMap, setChecksMap]         = useState({});
+  const [loadingMain, setLoadingMain]     = useState(true);
   const [loadingChecks, setLoadingChecks] = useState(false);
-  const [q, setQ]                 = useState("");
-  const [err, setErr]             = useState("");
+  const [q, setQ]                         = useState("");
+  const [err, setErr]                     = useState("");
 
   async function loadSummary() {
     try {
@@ -181,7 +167,6 @@ export default function Compliance() {
       const res = await axios.get(`${API}/api/dashboard/compliance/summary`);
       const data = res.data?.data || [];
       setRows(data);
-      // Load checks for all assets in background
       loadAllChecks(data.map(r => r.hostname));
     } catch (e) {
       setErr(e?.message || "Failed to load");
@@ -213,18 +198,22 @@ export default function Compliance() {
     return rows.filter(r => (r.hostname || "").toLowerCase().includes(qq));
   }, [rows, q]);
 
-  // ── Fleet-wide KPIs ─────────────────────────────────────────────────────────
+  // Fleet KPIs — all from live checksMap
   const kpis = useMemo(() => {
     if (!rows.length) return null;
-    const avgScore    = Math.round(rows.reduce((s, r) => s + (r.score ?? 0), 0) / rows.length);
-    const totalFailed = rows.reduce((s, r) => s + (r.failedCount ?? 0), 0);
-    const nonCompliant = rows.filter(r => r.status === "Non-Compliant").length;
-
-    // Total checks across all assets
-    const totalChecks = Object.values(checksMap).reduce((s, arr) => s + arr.length, 0);
-    const totalPassed = Object.values(checksMap).reduce((s, arr) => s + arr.filter(c => c.result === "passed").length, 0);
-
-    return { avgScore, totalFailed, nonCompliant, totalChecks, totalPassed };
+    const totalChecks  = Object.values(checksMap).reduce((s, arr) => s + arr.length, 0);
+    const totalFailed  = Object.values(checksMap).reduce((s, arr) => s + arr.filter(c => c.result === "failed").length, 0);
+    const totalPassed  = Object.values(checksMap).reduce((s, arr) => s + arr.filter(c => c.result === "passed").length, 0);
+    const nonCompliant = Object.values(checksMap).filter(arr => arr.some(c => c.result === "failed")).length;
+    const scores = rows.map(r => {
+      const arr   = checksMap[r.hostname] ?? [];
+      const p     = arr.filter(c => c.result === "passed").length;
+      const na    = arr.filter(c => c.result === "not applicable").length;
+      const denom = arr.length - na;
+      return denom > 0 ? Math.round((p / denom) * 100) : 0;
+    });
+    const avgScore = scores.length ? Math.round(scores.reduce((s, v) => s + v, 0) / scores.length) : 0;
+    return { avgScore, totalFailed, totalPassed, totalChecks, nonCompliant };
   }, [rows, checksMap]);
 
   return (
@@ -240,7 +229,6 @@ export default function Compliance() {
     >
       {err && <div style={{ color: "crimson", marginBottom: 16 }}>{err}</div>}
 
-      {/* KPIs */}
       {kpis && (
         <div className="kpis" style={{ marginBottom: 24 }}>
           <div className="card">
@@ -271,12 +259,15 @@ export default function Compliance() {
         </div>
       )}
 
-      {/* Asset cards */}
       {loadingMain && <div className="muted">Loading compliance data...</div>}
       {!loadingMain && (
         <div style={{ display: "grid", gap: 16 }}>
           {filtered
-            .sort((a, b) => (a.score ?? 0) - (b.score ?? 0)) // worst first
+            .sort((a, b) => {
+              const fa = (checksMap[a.hostname] ?? []).filter(c => c.result === "failed").length;
+              const fb = (checksMap[b.hostname] ?? []).filter(c => c.result === "failed").length;
+              return fb - fa;
+            })
             .map(row => (
               <AssetCard
                 key={row.hostname}

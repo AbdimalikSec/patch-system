@@ -13,15 +13,14 @@ function priorityRank(p) {
 function badgeClass(priority) {
   const p = (priority || "").toLowerCase();
   if (p === "critical") return "badge critical";
-  if (p === "high") return "badge high";
-  if (p === "medium") return "badge medium";
+  if (p === "high")     return "badge high";
+  if (p === "medium")   return "badge medium";
   return "badge low";
 }
 
 function exportCSV(rows) {
   const header = ["hostname", "os", "ip", "missingCount", "failedCount", "riskScore", "priority", "lastSeen"];
-  const lines = [header.join(",")];
-
+  const lines  = [header.join(",")];
   for (const r of rows) {
     const line = [
       r.hostname,
@@ -31,25 +30,23 @@ function exportCSV(rows) {
       r.compliance?.failedCount ?? "",
       r.risk?.score ?? "",
       r.risk?.priority ?? "",
-      r.lastSeen || ""
+      r.lastSeen || "",
     ].map(v => `"${String(v).replaceAll('"', '""')}"`).join(",");
     lines.push(line);
   }
-
   const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
   a.download = "riskpatch_overview.csv";
   a.click();
   URL.revokeObjectURL(url);
 }
 
 function FleetHealth({ rows }) {
-  const healthyCount = useMemo(() => {
-    return rows.filter(r => (r?.risk?.score || 0) < 20 && (r?.compliance?.failedCount || 0) === 0).length;
-  }, [rows]);
-
+  const healthyCount = useMemo(() =>
+    rows.filter(r => (r?.risk?.score || 0) < 20 && (r?.compliance?.failedCount || 0) === 0).length,
+  [rows]);
   const pct = rows.length ? Math.round((healthyCount / rows.length) * 100) : 0;
 
   return (
@@ -60,7 +57,8 @@ function FleetHealth({ rows }) {
           <svg viewBox="0 0 36 36" style={{ width: "100%", height: "100%", transform: "rotate(-90deg)" }}>
             <circle cx="18" cy="18" r="15.9" fill="transparent" stroke="var(--line)" strokeWidth="3" />
             <circle cx="18" cy="18" r="15.9" fill="transparent" stroke="var(--accent)" strokeWidth="3"
-              strokeDasharray={`${pct} ${100 - pct}`} strokeLinecap="round" style={{ transition: "stroke-dasharray 1s ease" }} />
+              strokeDasharray={`${pct} ${100 - pct}`} strokeLinecap="round"
+              style={{ transition: "stroke-dasharray 1s ease" }} />
           </svg>
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", fontWeight: 900 }}>
             {pct}%
@@ -70,8 +68,8 @@ function FleetHealth({ rows }) {
           <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--text)" }}>{healthyCount} of {rows.length} assets</div>
           <div style={{ fontSize: "12px", color: "var(--muted)", marginTop: 4 }}>Healthy & Compliant</div>
           <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-            <div className={`badge ${pct > 80 ? 'low' : pct > 50 ? 'medium' : 'critical'}`} style={{ fontSize: "10px" }}>
-              {pct > 80 ? 'Optimal' : pct > 50 ? 'Warning' : 'Critical'}
+            <div className={`badge ${pct > 80 ? "low" : pct > 50 ? "medium" : "critical"}`} style={{ fontSize: "10px" }}>
+              {pct > 80 ? "Optimal" : pct > 50 ? "Warning" : "Critical"}
             </div>
           </div>
         </div>
@@ -81,24 +79,24 @@ function FleetHealth({ rows }) {
 }
 
 function ActivityFeed({ rows }) {
-  const recentAssets = useMemo(() => {
-    return [...rows]
-      .filter(r => r.lastSeen)
-      .sort((a, b) => new Date(b.lastSeen) - new Date(a.lastSeen))
-      .slice(0, 5);
-  }, [rows]);
+  const recentAssets = useMemo(() =>
+    [...rows].filter(r => r.lastSeen).sort((a, b) => new Date(b.lastSeen) - new Date(a.lastSeen)).slice(0, 5),
+  [rows]);
 
   return (
     <div className="card" style={{ flex: 1, padding: "20px" }}>
       <div className="cardLabel" style={{ marginBottom: 16 }}>Recent Activity</div>
       <div style={{ display: "grid", gap: 14 }}>
         {recentAssets.map((r, i) => (
-          <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", paddingBottom: 10, borderBottom: i === recentAssets.length - 1 ? 'none' : '1px solid var(--line)' }}>
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)" }}></div>
+          <div key={i} style={{
+            display: "flex", gap: 12, alignItems: "center", paddingBottom: 10,
+            borderBottom: i === recentAssets.length - 1 ? "none" : "1px solid var(--line)"
+          }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)" }} />
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: "13px", fontWeight: 600 }}>{r.hostname} checked in</div>
               <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: 2 }}>
-                {new Date(r.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                {new Date(r.lastSeen).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
               </div>
             </div>
             <Link to={`/asset/${encodeURIComponent(r.hostname)}`} className="btn" style={{ padding: "4px 8px", fontSize: "10px" }}>View</Link>
@@ -110,11 +108,11 @@ function ActivityFeed({ rows }) {
 }
 
 export default function Overview() {
-  const [rows, setRows] = useState([]);
+  const [rows, setRows]       = useState([]);
   const [priorityFilter, setPriorityFilter] = useState("All");
-  const [q, setQ] = useState("");
+  const [q, setQ]             = useState("");
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
+  const [err, setErr]         = useState("");
 
   async function load() {
     try {
@@ -132,10 +130,10 @@ export default function Overview() {
   useEffect(() => { load(); }, []);
 
   const filtered = useMemo(() => {
-    const qq = q.trim().toLowerCase();
+    const qq   = q.trim().toLowerCase();
     const base = rows.filter(r => {
-      const matchesPriority = priorityFilter === "All" ? true : (r?.risk?.priority === priorityFilter);
-      const matchesSearch = !qq ? true : (
+      const matchesPriority = priorityFilter === "All" ? true : r?.risk?.priority === priorityFilter;
+      const matchesSearch   = !qq ? true : (
         (r.hostname || "").toLowerCase().includes(qq) ||
         (r.os || "").toLowerCase().includes(qq) ||
         (r.ip || "").toLowerCase().includes(qq)
@@ -150,14 +148,14 @@ export default function Overview() {
   }, [rows, priorityFilter, q]);
 
   const kpis = useMemo(() => {
-    const total = rows.length;
-    const high = rows.filter(r => ["High", "Critical"].includes(r?.risk?.priority)).length;
+    const total        = rows.length;
+    const high         = rows.filter(r => ["High", "Critical"].includes(r?.risk?.priority)).length;
+    // failedCount in compliance now comes from live compliancechecks via assets.js
     const nonCompliant = rows.filter(r => (r?.compliance?.failedCount || 0) > 0).length;
-    const overdue = rows.filter(r => {
+    const overdue      = rows.filter(r => {
       const t = r?.patch?.collectedAt;
       if (!t) return true;
-      const ageMs = Date.now() - new Date(t).getTime();
-      return ageMs > (7 * 24 * 60 * 60 * 1000);
+      return Date.now() - new Date(t).getTime() > 7 * 24 * 60 * 60 * 1000;
     }).length;
     return { total, high, nonCompliant, overdue };
   }, [rows]);
@@ -167,8 +165,8 @@ export default function Overview() {
       title="Security Dashboard"
       rightControls={
         <>
-          <input className="input" placeholder="Search fleet..." value={q} onChange={(e) => setQ(e.target.value)} />
-          <select className="input" style={{ minWidth: 140 }} value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
+          <input className="input" placeholder="Search fleet..." value={q} onChange={e => setQ(e.target.value)} />
+          <select className="input" style={{ minWidth: 140 }} value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}>
             <option value="All">All Priorities</option>
             <option>Critical</option>
             <option>High</option>
@@ -205,7 +203,7 @@ export default function Overview() {
       </div>
 
       {loading && <div className="muted">Loading analytics...</div>}
-      {err && <div style={{ color: "crimson" }}>{err}</div>}
+      {err    && <div style={{ color: "crimson" }}>{err}</div>}
 
       {!loading && !err && (
         <div className="tableWrap">
