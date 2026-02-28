@@ -1,35 +1,30 @@
 const router = require("express").Router();
-const Asset = require("../models/Asset");
-const Patch = require("../models/Patch");
-const Compliance = require("../models/Compliance");
+const Asset           = require("../models/Asset");
+const Patch           = require("../models/Patch");
+const Compliance      = require("../models/Compliance");
+const ComplianceCheck = require("../models/ComplianceCheck");
 
-/**
- * Escape regex special chars in a string so we can safely build ^...$ patterns.
- */
 function escapeRegex(str = "") {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/**
- * Find latest document for hostname with case-insensitive exact match.
- */
 async function findLatestCaseInsensitive(Model, field, hostname) {
   const rx = new RegExp(`^${escapeRegex(hostname)}$`, "i");
   return Model.findOne({ [field]: { $regex: rx } }).sort({ collectedAt: -1 }).lean();
 }
 
+// GET /api/dashboard/patches/backlog
 router.get("/patches/backlog", async (req, res) => {
   try {
     const assets = await Asset.find({}).lean();
-
     const out = [];
+
     for (const a of assets) {
       const p = await findLatestCaseInsensitive(Patch, "assetHostname", a.hostname);
       if (!p) continue;
 
       const missing = Array.isArray(p.missing) ? p.missing : [];
 
-      // Show each missing item as a row
       for (const item of missing) {
         out.push({
           hostname: a.hostname,
@@ -40,7 +35,6 @@ router.get("/patches/backlog", async (req, res) => {
         });
       }
 
-      // If missingCount > 0 but list empty (Windows academic collector), still show one row
       if ((p.missingCount || 0) > 0 && missing.length === 0) {
         out.push({
           hostname: a.hostname,
@@ -59,11 +53,12 @@ router.get("/patches/backlog", async (req, res) => {
   }
 });
 
+// GET /api/dashboard/compliance/failed
 router.get("/compliance/failed", async (req, res) => {
   try {
     const assets = await Asset.find({}).lean();
-
     const out = [];
+
     for (const a of assets) {
       const c = await findLatestCaseInsensitive(Compliance, "assetHostname", a.hostname);
       if (!c) continue;
@@ -80,7 +75,6 @@ router.get("/compliance/failed", async (req, res) => {
         });
       }
 
-      // If failedCount > 0 but list empty, show one row
       if ((c.failedCount || 0) > 0 && failed.length === 0) {
         out.push({
           hostname: a.hostname,
@@ -99,15 +93,23 @@ router.get("/compliance/failed", async (req, res) => {
   }
 });
 
+// GET /api/dashboard/compliance/summary
+// Counts directly from compliancechecks so scores update after every collector run
 router.get("/compliance/summary", async (req, res) => {
   try {
     const assets = await Asset.find({}).lean();
-
     const out = [];
-    for (const a of assets) {
-      const c = await findLatestCaseInsensitive(Compliance, "assetHostname", a.hostname);
 
-      if (!c) {
+    for (const a of assets) {
+      const rx = new RegExp(`^${escapeRegex(a.hostname)}$`, "i");
+
+      const [failedCount, totalCount, latestCheck] = await Promise.all([
+        ComplianceCheck.countDocuments({ assetHostname: { $regex: rx }, result: "failed" }),
+        ComplianceCheck.countDocuments({ assetHostname: { $regex: rx }, result: { $in: ["failed", "passed"] } }),
+        ComplianceCheck.findOne({ assetHostname: { $regex: rx } }).sort({ collectedAt: -1 }).lean(),
+      ]);
+
+      if (totalCount === 0) {
         out.push({
           hostname: a.hostname,
           status: "No Data",
@@ -118,17 +120,14 @@ router.get("/compliance/summary", async (req, res) => {
         continue;
       }
 
-      // If collector stored failedCount as null sometimes, compute safely
-      const failedCount = (c.failedCount === null || c.failedCount === undefined)
-        ? (Array.isArray(c.failed) ? c.failed.length : 0)
-        : c.failedCount;
+      const score = Math.round(((totalCount - failedCount) / totalCount) * 100);
 
       out.push({
         hostname: a.hostname,
         status: failedCount > 0 ? "Non-Compliant" : "Compliant",
-        score: (c.score === null || c.score === undefined) ? null : c.score,
+        score,
         failedCount,
-        collectedAt: c.collectedAt || null,
+        collectedAt: latestCheck?.collectedAt || null,
       });
     }
 
