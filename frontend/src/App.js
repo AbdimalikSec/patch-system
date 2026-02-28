@@ -1,24 +1,39 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import "./ui.css";
+import { AuthProvider } from "./context/AuthContext";
+import ProtectedRoute from "./components/ProtectedRoute";
 
-import Overview from "./pages/Overview";
-import Assets from "./pages/Assets";
-import Backlog from "./pages/Backlog";
+import Login      from "./pages/Login";
+import Overview   from "./pages/Overview";
 import Compliance from "./pages/Compliance";
 import AssetDetails from "./pages/AssetDetails";
 import Evaluation from "./pages/Evaluation";
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Overview />} />
-        <Route path="/assets" element={<Assets />} />
-        <Route path="/asset/:hostname" element={<AssetDetails />} />
-        <Route path="/backlog" element={<Backlog />} />
-        <Route path="/compliance" element={<Compliance />} />
-        <Route path="/evaluation" element={<Evaluation />} />
-      </Routes>
-    </BrowserRouter>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* Public */}
+          <Route path="/login" element={<Login />} />
+
+          {/* Protected */}
+          <Route path="/" element={
+            <ProtectedRoute><Overview /></ProtectedRoute>
+          } />
+          <Route path="/compliance" element={
+            <ProtectedRoute><Compliance /></ProtectedRoute>
+          } />
+          <Route path="/asset/:hostname" element={
+            <ProtectedRoute><AssetDetails /></ProtectedRoute>
+          } />
+          <Route path="/evaluation" element={
+            <ProtectedRoute><Evaluation /></ProtectedRoute>
+          } />
+
+          {/* Fallback */}
+          <Route path="*" element={<ProtectedRoute><Overview /></ProtectedRoute>} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
