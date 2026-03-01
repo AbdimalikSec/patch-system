@@ -55,6 +55,7 @@ export default function AssetDetails() {
   const [patchRes, setPatchRes] = useState(null);
   const [compRes, setCompRes]   = useState(null);
   const [checksRes, setChecksRes] = useState([]);
+  const [agentLive, setAgentLive] = useState(null); // live from Wazuh API
 
   const [err, setErr]         = useState("");
   const [loading, setLoading] = useState(true);
@@ -71,16 +72,18 @@ export default function AssetDetails() {
       try {
         setLoading(true);
         setErr("");
-        const [r, p, c, ch] = await Promise.all([
+        const [r, p, c, ch, ag] = await Promise.all([
           axios.get(`${API}/api/risk/latest/${encodeURIComponent(hostname)}`),
           axios.get(`${API}/api/patches/latest/${encodeURIComponent(hostname)}`),
           axios.get(`${API}/api/compliance/latest/${encodeURIComponent(hostname)}`),
           axios.get(`${API}/api/compliance/checks/${encodeURIComponent(hostname)}`),
+          axios.get(`${API}/api/agents/status/${encodeURIComponent(hostname)}`).catch(() => ({ data: null })),
         ]);
         setRiskRes(r.data);
         setPatchRes(p.data);
         setCompRes(c.data);
         setChecksRes(ch.data?.data || []);
+        setAgentLive(ag.data?.data || null);
       } catch (e) {
         setErr(e?.message || "Failed to load asset details");
       } finally {
@@ -93,10 +96,11 @@ export default function AssetDetails() {
   const patch  = patchRes?.data || null;
   const comp   = compRes?.data || null;
 
-  const agentStatus   = comp?.raw?.agent?.status;
-  const agentLastSeen = comp?.raw?.agent?.lastKeepAlive || comp?.raw?.agent?.dateAdd || null;
-  const osName        = comp?.raw?.agent?.os?.name || patch?.os || "-";
-  const ipAddr        = comp?.raw?.agent?.ip || patch?.raw?.ip || "-";
+  // Live from Wazuh API — falls back to stale data if Wazuh unreachable
+  const agentStatus   = agentLive?.status   || comp?.raw?.agent?.status;
+  const agentLastSeen = agentLive?.lastKeepAlive || comp?.raw?.agent?.lastKeepAlive || comp?.raw?.agent?.dateAdd || null;
+  const osName        = agentLive?.os        || comp?.raw?.agent?.os?.name || patch?.os || "-";
+  const ipAddr        = agentLive?.ip        || comp?.raw?.agent?.ip || patch?.raw?.ip || "-";
 
   const patchList = useMemo(() => {
     if (!patch?.missing) return [];
