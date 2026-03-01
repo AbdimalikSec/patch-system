@@ -1,39 +1,40 @@
-const router  = require("express").Router();
-const https   = require("https");
+const router = require("express").Router();
+const axios  = require("axios");
+const https  = require("https");
 
-const WAZUH = process.env.WAZUH_API_URL;   // https://10.10.20.20:55000
-const USER  = process.env.WAZUH_API_USER;  // riskpatch-api
-const PASS  = process.env.WAZUH_API_PASS;  // passwordsS3*
+const WAZUH = process.env.WAZUH_API_URL;
+const USER  = process.env.WAZUH_API_USER;
+const PASS  = process.env.WAZUH_API_PASS;
 
-// Skip TLS verification for lab environment
-const agent = new https.Agent({ rejectUnauthorized: false });
+// Skip TLS verification — lab environment
+const wazuh = axios.create({
+  baseURL: WAZUH,
+  httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+  timeout: 8000,
+});
 
 async function getWazuhToken() {
   const basic = Buffer.from(`${USER}:${PASS}`).toString("base64");
-  const res   = await fetch(`${WAZUH}/security/user/authenticate`, {
-    method: "POST",
+  const res   = await wazuh.post("/security/user/authenticate", null, {
     headers: { Authorization: `Basic ${basic}` },
-    agent,
   });
-  const data = await res.json();
-  return data?.data?.token;
+  return res.data?.data?.token;
 }
 
-// GET /api/agents/status/:hostname
-// Returns live agent status from Wazuh API
+// GET /api/agents/status/:hostname — live status from Wazuh
 router.get("/status/:hostname", async (req, res) => {
   try {
     const token = await getWazuhToken();
-    const wRes  = await fetch(
-      `${WAZUH}/agents?search=${encodeURIComponent(req.params.hostname)}&limit=10`,
-      { headers: { Authorization: `Bearer ${token}` }, agent }
+    const resp  = await wazuh.get(
+      `/agents?search=${encodeURIComponent(req.params.hostname)}&limit=20`,
+      { headers: { Authorization: `Bearer ${token}` } }
     );
-    const data   = await wRes.json();
-    const agents = data?.data?.affected_items || [];
 
-    // Find exact match by name (case-insensitive)
+    const agents = resp.data?.data?.affected_items || [];
+
+    // Exact name match (case-insensitive)
     const match = agents.find(
-      a => a.name?.toLowerCase() === req.params.hostname.toLowerCase()
+      a => (a.name || "").toLowerCase() === req.params.hostname.toLowerCase()
     );
 
     if (!match) {
@@ -43,29 +44,29 @@ router.get("/status/:hostname", async (req, res) => {
     res.json({
       ok: true,
       data: {
-        status:      match.status,           // "active" | "disconnected" | "never_connected"
-        os:          match.os?.name || null,
-        ip:          match.ip || null,
+        status:        match.status,
+        os:            match.os?.name || null,
+        ip:            match.ip || null,
         lastKeepAlive: match.lastKeepAlive || match.dateAdd || null,
-        version:     match.version || null,
-        agentId:     match.id,
+        version:       match.version || null,
+        agentId:       match.id,
       },
     });
   } catch (e) {
-    console.error("Agent status error:", e.message);
-    res.status(500).json({ ok: false, error: "Failed to fetch agent status" });
+    console.error("[agents] status error:", e.message);
+    res.status(500).json({ ok: false, error: "Failed to fetch agent status from Wazuh" });
   }
 });
 
-// GET /api/agents — list all agents with live status
+// GET /api/agents — all agents with live status
 router.get("/", async (req, res) => {
   try {
     const token = await getWazuhToken();
-    const wRes  = await fetch(`${WAZUH}/agents?limit=500`, {
-      headers: { Authorization: `Bearer ${token}` }, agent
+    const resp  = await wazuh.get("/agents?limit=500", {
+      headers: { Authorization: `Bearer ${token}` },
     });
-    const data   = await wRes.json();
-    const agents = (data?.data?.affected_items || []).map(a => ({
+
+    const agents = (resp.data?.data?.affected_items || []).map(a => ({
       agentId:       a.id,
       hostname:      a.name,
       status:        a.status,
@@ -74,10 +75,11 @@ router.get("/", async (req, res) => {
       lastKeepAlive: a.lastKeepAlive || a.dateAdd || null,
       version:       a.version || null,
     }));
+
     res.json({ ok: true, count: agents.length, data: agents });
   } catch (e) {
-    console.error("Agents list error:", e.message);
-    res.status(500).json({ ok: false, error: "Failed to fetch agents" });
+    console.error("[agents] list error:", e.message);
+    res.status(500).json({ ok: false, error: "Failed to fetch agents from Wazuh" });
   }
 });
 
