@@ -2,12 +2,14 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 
-import Login       from "./pages/Login";
-import Overview    from "./pages/Overview";
-import Compliance  from "./pages/Compliance";
+import Login        from "./pages/Login";
+import Overview     from "./pages/Overview";
+import Assets       from "./pages/Assets";
+import Backlog      from "./pages/Backlog";
+import Compliance   from "./pages/Compliance";
 import AssetDetails from "./pages/AssetDetails";
-import Evaluation  from "./pages/Evaluation";
-import Users       from "./pages/Users";
+import Evaluation   from "./pages/Evaluation";
+import Users        from "./pages/Users";
 
 export default function App() {
   return (
@@ -20,6 +22,12 @@ export default function App() {
           {/* Admin + Analyst only */}
           <Route path="/" element={
             <ProtectedRoute roles={["admin", "analyst"]}><Overview /></ProtectedRoute>
+          } />
+          <Route path="/assets" element={
+            <ProtectedRoute roles={["admin", "analyst"]}><Assets /></ProtectedRoute>
+          } />
+          <Route path="/backlog" element={
+            <ProtectedRoute roles={["admin", "analyst"]}><Backlog /></ProtectedRoute>
           } />
           <Route path="/asset/:hostname" element={
             <ProtectedRoute roles={["admin", "analyst"]}><AssetDetails /></ProtectedRoute>
