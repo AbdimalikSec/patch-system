@@ -1,12 +1,13 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 
-import Login      from "./pages/Login";
-import Overview   from "./pages/Overview";
-import Compliance from "./pages/Compliance";
+import Login       from "./pages/Login";
+import Overview    from "./pages/Overview";
+import Compliance  from "./pages/Compliance";
 import AssetDetails from "./pages/AssetDetails";
-import Evaluation from "./pages/Evaluation";
+import Evaluation  from "./pages/Evaluation";
+import Users       from "./pages/Users";
 
 export default function App() {
   return (
@@ -16,22 +17,29 @@ export default function App() {
           {/* Public */}
           <Route path="/login" element={<Login />} />
 
-          {/* Protected */}
+          {/* Admin + Analyst only */}
           <Route path="/" element={
-            <ProtectedRoute><Overview /></ProtectedRoute>
-          } />
-          <Route path="/compliance" element={
-            <ProtectedRoute><Compliance /></ProtectedRoute>
+            <ProtectedRoute roles={["admin", "analyst"]}><Overview /></ProtectedRoute>
           } />
           <Route path="/asset/:hostname" element={
-            <ProtectedRoute><AssetDetails /></ProtectedRoute>
+            <ProtectedRoute roles={["admin", "analyst"]}><AssetDetails /></ProtectedRoute>
           } />
           <Route path="/evaluation" element={
-            <ProtectedRoute><Evaluation /></ProtectedRoute>
+            <ProtectedRoute roles={["admin", "analyst"]}><Evaluation /></ProtectedRoute>
+          } />
+
+          {/* Admin + Analyst + Auditor */}
+          <Route path="/compliance" element={
+            <ProtectedRoute roles={["admin", "analyst", "auditor"]}><Compliance /></ProtectedRoute>
+          } />
+
+          {/* Admin only */}
+          <Route path="/users" element={
+            <ProtectedRoute roles={["admin"]}><Users /></ProtectedRoute>
           } />
 
           {/* Fallback */}
-          <Route path="*" element={<ProtectedRoute><Overview /></ProtectedRoute>} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
