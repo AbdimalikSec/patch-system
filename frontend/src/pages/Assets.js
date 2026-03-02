@@ -132,13 +132,29 @@ function FleetAnalytics({ rows }) {
 }
 
 export default function Assets() {
-  const [rows, setRows] = useState([]);
-  const [q, setQ] = useState("");
+  const [rows, setRows]              = useState([]);
+  const [q, setQ]                    = useState("");
+  const [agentStatuses, setStatuses] = useState({});
 
   useEffect(() => {
     (async () => {
       const res = await axios.get(`${API}/api/assets/overview`);
       setRows(res.data?.data || []);
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await axios.get(`${API}/api/agents`);
+        const map = {};
+        for (const a of (res.data?.data || [])) {
+          map[a.hostname] = a.status;
+        }
+        setStatuses(map);
+      } catch (e) {
+        console.warn("Could not fetch live agent statuses:", e.message);
+      }
     })();
   }, []);
 
@@ -180,7 +196,7 @@ export default function Assets() {
           </thead>
           <tbody>
             {filtered.map((r) => {
-              const agentStatus = r?.compliance?.raw?.agent?.status;
+              const agentStatus = agentStatuses[r.hostname] ?? null;
               const priority = r?.risk?.priority || "Low";
               const score = r?.risk?.score ?? 0;
 
