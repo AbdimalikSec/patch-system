@@ -16,7 +16,6 @@ connectDB();
 app.use("/api/auth",   require("./routes/auth"));
 app.use("/api/ingest", require("./routes/ingest"));
 app.use("/api/health", require("./routes/health"));
-app.use("/api/patches/ingest", require("./routes/patches")); // ← add this line
 
 // ── Protected routes ──────────────────────────────────────────────────────────
 app.use("/api/patches",    requireAuth, require("./routes/patches"));
@@ -29,15 +28,3 @@ app.use("/api/agents",     requireAuth, require("./routes/agents"));
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-
-
-
-
-
-
-/* hello */
-
-
-
-
