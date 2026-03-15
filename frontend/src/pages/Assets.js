@@ -60,7 +60,7 @@ function FleetAnalytics({ rows }) {
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 20, marginTop: 32 }}>
       {/* Risk Distribution Chart */}
       <div className="card">
-        <div className="cardLabel">Fleet Risk Distribution</div>
+        <div className="cardLabel"> Risk Distribution</div>
         <div style={{ display: "grid", gap: 12, marginTop: 20 }}>
           {['critical', 'high', 'medium', 'low'].map(key => {
             const count = stats.risk[key];
@@ -170,7 +170,7 @@ export default function Assets() {
 
   return (
     <Layout
-      title="Fleet Assets"
+      title="Assets"
       rightControls={
         <input
           className="input"

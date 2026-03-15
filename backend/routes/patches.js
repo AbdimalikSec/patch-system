@@ -7,14 +7,18 @@ router.post("/ingest", async (req, res) => {
     const { assetHostname, os, missingCount, missing, raw } = req.body;
     if (!assetHostname || !os) return res.status(400).json({ ok: false, error: "assetHostname and os required" });
 
-    const doc = await Patch.create({
-      assetHostname,
-      os,
-      missingCount: missingCount ?? (Array.isArray(missing) ? missing.length : 0),
-      missing: missing || [],
-      raw: raw || req.body,
-      collectedAt: new Date(),
-    });
+    const doc = await Patch.findOneAndUpdate(
+      { assetHostname },
+      {
+        assetHostname,
+        os,
+        missingCount: missingCount ?? (Array.isArray(missing) ? missing.length : 0),
+        missing: missing || [],
+        raw: raw || req.body,
+        collectedAt: new Date(),
+      },
+      { upsert: true, new: true }
+    );
 
     res.json({ ok: true, patchId: doc._id });
   } catch (e) {
