@@ -6,6 +6,24 @@ const { requireAuth, requireAdmin } = require("../middleware/authMiddleware");
 const JWT_SECRET  = process.env.JWT_SECRET  || "riskpatch-secret-change-in-prod";
 const JWT_EXPIRES = process.env.JWT_EXPIRES || "8h";
 
+// ── Validation helpers ────────────────────────────────────────────────────────
+function validateUsername(val) {
+  if (!val || typeof val !== "string") return "Username is required.";
+  const u = val.trim();
+  if (u.length < 3) return "Username must be at least 3 characters.";
+  if (u.length > 32) return "Username must be 32 characters or fewer.";
+  if (/^\d+$/.test(u)) return "Username cannot be numbers only.";
+  if (!/^[a-zA-Z0-9._-]+$/.test(u)) return "Username can only contain letters, numbers, dots, hyphens, and underscores.";
+  return "";
+}
+
+function validatePassword(val) {
+  if (!val || typeof val !== "string") return "Password is required.";
+  if (val.length < 8) return "Password must be at least 8 characters.";
+  if (val.length > 128) return "Password is too long.";
+  return "";
+}
+
 // POST /api/auth/login
 router.post("/login", async (req, res) => {
   try {
@@ -41,27 +59,22 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// GET /api/auth/me — verify token and return current user
+// GET /api/auth/me
 router.get("/me", requireAuth, (req, res) => {
   res.json({ ok: true, user: req.user });
 });
 
-// POST /api/auth/seed — create default users (run once, admin only after first user exists)
-// If no users exist, allow open seeding so you can bootstrap
+// POST /api/auth/seed
 router.post("/seed", async (req, res) => {
   try {
     const count = await User.countDocuments();
-
-    // Only allow seeding if no users exist yet
     if (count > 0) {
       return res.status(403).json({ ok: false, error: "Users already seeded" });
     }
-
     await User.create([
-      { username: "admin",   password: "Admin@RiskPatch1", role: "admin"   },
+      { username: "admin",   password: "Admin@RiskPatch1",   role: "admin"   },
       { username: "analyst", password: "Analyst@RiskPatch1", role: "analyst" },
     ]);
-
     res.json({ ok: true, message: "Default users created. Change passwords immediately." });
   } catch (e) {
     console.error(e);
@@ -69,7 +82,7 @@ router.post("/seed", async (req, res) => {
   }
 });
 
-// GET /api/auth/users — list all users (admin only)
+// GET /api/auth/users
 router.get("/users", requireAuth, requireAdmin, async (req, res) => {
   try {
     const users = await User.find({}).select("-password").lean();
@@ -79,14 +92,29 @@ router.get("/users", requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-// POST /api/auth/users — create a new user (admin only)
+// POST /api/auth/users
 router.post("/users", requireAuth, requireAdmin, async (req, res) => {
   try {
     const { username, password, role } = req.body;
-    if (!username || !password) {
-      return res.status(400).json({ ok: false, error: "Username and password required" });
+
+    // Server-side validation — cannot be bypassed by frontend
+    const uErr = validateUsername(username);
+    if (uErr) return res.status(400).json({ ok: false, error: uErr });
+
+    const pErr = validatePassword(password);
+    if (pErr) return res.status(400).json({ ok: false, error: pErr });
+
+    const allowedRoles = ["admin", "analyst", "auditor"];
+    if (role && !allowedRoles.includes(role)) {
+      return res.status(400).json({ ok: false, error: "Invalid role. Must be admin, analyst, or auditor." });
     }
-    const user = await User.create({ username, password, role: role || "analyst" });
+
+    const user = await User.create({
+      username: username.trim().toLowerCase(),
+      password,
+      role: role || "analyst"
+    });
+
     res.json({ ok: true, user: { id: user._id, username: user.username, role: user.role } });
   } catch (e) {
     if (e.code === 11000) return res.status(400).json({ ok: false, error: "Username already exists" });
@@ -94,9 +122,13 @@ router.post("/users", requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-// DELETE /api/auth/users/:id — delete a user (admin only)
+// DELETE /api/auth/users/:id
 router.delete("/users/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
+    // Prevent deleting yourself
+    if (req.params.id === req.user.id) {
+      return res.status(400).json({ ok: false, error: "You cannot delete your own account." });
+    }
     await User.findByIdAndDelete(req.params.id);
     res.json({ ok: true });
   } catch (e) {
