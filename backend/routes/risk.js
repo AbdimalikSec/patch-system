@@ -4,9 +4,10 @@ const Patch      = require("../models/Patch");
 const Compliance = require("../models/Compliance");
 const AssetMeta  = require("../models/AssetMeta");
 const CVEMatch   = require("../models/CVEMatch");
+const ComplianceCheck = require("../models/ComplianceCheck");
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RISK ENGINE v3 — CVE/CVSS Integrated
+// RISK ENGINE v4 — CVE/CVSS + Patch Age Integrated
 //
 // Formula:
 //
@@ -15,19 +16,21 @@ const CVEMatch   = require("../models/CVEMatch");
 //     0, 100
 //   )
 //
-// CVSSFactor replaces the simple PatchFactor from v2:
-//   CVSSFactor = maxCVSS / 10.0
-//   where maxCVSS = highest CVSS base score across all CVEs for this asset
-//   Falls back to: clamp(missingCount / PATCH_MAX, 0, 1) if no CVE data exists
+// CVSSFactor now includes patch age boost:
+//   CVSSFactor = clamp((maxCVSS / 10.0) × AgeFactor, 0, 1)
+//
+// AgeFactor (based on days since oldest missing patch was first detected):
+//   < 7 days   = 1.00 (no boost)
+//   7-30 days  = 1.10 (10% boost — patch window opening)
+//   30-60 days = 1.20 (20% boost — significant exposure)
+//   60-90 days = 1.35 (35% boost — high exposure window)
+//   90+ days   = 1.50 (50% boost — critical, likely targeted)
 //
 // Weight justification (NIST SP 800-30):
-//   W_cvss = 0.55  — CVSS score directly measures exploitability and impact
-//                    (replaces raw patch count which had no severity context)
-//   W_comp = 0.45  — CIS benchmark failures = attack surface / misconfiguration
+//   W_cvss = 0.55
+//   W_comp = 0.45
 //
-// CriticalityMultiplier = 0.5 + (criticality × 0.5)  [range: 0.5 → 1.0]
-//
-// Risk tiers (aligned with CVSS v3.1):
+// Risk tiers:
 //   Critical >= 75
 //   High     >= 50
 //   Medium   >= 25
@@ -47,13 +50,48 @@ function hostnameRegex(hostname) {
   return { $regex: new RegExp(`^${hostname}$`, "i") };
 }
 
+// ── Patch Age Factor ──────────────────────────────────────────────────────────
+function computeAgeFactor(collectedAt) {
+  if (!collectedAt) return { factor: 1.0, days: 0, label: "unknown age" };
+
+  const now      = Date.now();
+  const patchDate = new Date(collectedAt).getTime();
+  const days     = Math.floor((now - patchDate) / (1000 * 60 * 60 * 24));
+
+  let factor;
+  let label;
+
+  if (days < 7) {
+    factor = 1.0;
+    label  = `${days}d old — no age boost`;
+  } else if (days < 30) {
+    factor = 1.1;
+    label  = `${days}d old — +10% age boost (patch window opening)`;
+  } else if (days < 60) {
+    factor = 1.2;
+    label  = `${days}d old — +20% age boost (significant exposure)`;
+  } else if (days < 90) {
+    factor = 1.35;
+    label  = `${days}d old — +35% age boost (high exposure window)`;
+  } else {
+    factor = 1.5;
+    label  = `${days}d old — +50% age boost (critical, likely targeted)`;
+  }
+
+  return { factor, days, label };
+}
+
 async function computeRisk({ patch, compliance, meta, cveMatches }) {
   const missingCount = patch?.missingCount     ?? 0;
   const failedCount  = compliance?.failedCount ?? 0;
   const criticality  = meta?.criticality       ?? 0.5;
   const role         = meta?.role              ?? "workstation";
 
-  // ── CVSSFactor ────────────────────────────────────────────────────────────
+  // ── Patch Age Factor ──────────────────────────────────────────────────────
+  const { factor: ageFactor, days: patchAgeDays, label: ageLabel } =
+    computeAgeFactor(patch?.collectedAt);
+
+  // ── CVSSFactor with age boost ─────────────────────────────────────────────
   let cvssSource = "patch_count_fallback";
   let maxCVSS    = 0;
   let cvssCount  = 0;
@@ -64,9 +102,10 @@ async function computeRisk({ patch, compliance, meta, cveMatches }) {
     cvssSource = `${cvssCount} CVEs (max CVSS: ${maxCVSS.toFixed(1)})`;
   }
 
-  // If no CVE data, fall back to patch count normalised to 0-10 scale
   const cvssValue  = maxCVSS > 0 ? maxCVSS : (missingCount / PATCH_MAX) * 10;
-  const cvssFactor = clamp(cvssValue / 10.0, 0, 1);
+  // Apply age factor to CVSS value before normalising
+  const cvssAged   = cvssValue * ageFactor;
+  const cvssFactor = clamp(cvssAged / 10.0, 0, 1);
 
   // ── ComplianceFactor ──────────────────────────────────────────────────────
   const complianceFactor = clamp(failedCount / COMP_MAX, 0, 1);
@@ -99,7 +138,8 @@ async function computeRisk({ patch, compliance, meta, cveMatches }) {
   const reasons = [
     `Asset role: ${role} (criticality=${criticality}, multiplier=${criticalityMultiplier.toFixed(2)})`,
     `CVE data: ${cvssSource}`,
-    `CVSS factor = ${cvssValue.toFixed(1)} / 10 = ${cvssFactor.toFixed(3)} (weight ${W_CVSS})`,
+    `Patch age: ${ageLabel}`,
+    `CVSS factor = (${cvssValue.toFixed(1)} × ${ageFactor}) / 10 = ${cvssFactor.toFixed(3)} (weight ${W_CVSS})`,
     `CIS failures: ${failedCount} → compliance factor = ${complianceFactor.toFixed(3)} (weight ${W_COMP})`,
     `Base risk = (${W_CVSS} × ${cvssFactor.toFixed(3)}) + (${W_COMP} × ${complianceFactor.toFixed(3)}) = ${baseRisk.toFixed(3)}`,
     `Final score = ${baseRisk.toFixed(3)} × ${criticalityMultiplier.toFixed(2)} × 100 = ${score}`,
@@ -113,6 +153,9 @@ async function computeRisk({ patch, compliance, meta, cveMatches }) {
     maxCVSS,
     cvssCount,
     cvssSource,
+    ageFactor,
+    patchAgeDays,
+    ageLabel,
     cveSeverityBreakdown,
     weights:    { cvss: W_CVSS, compliance: W_COMP },
     thresholds: { compMax: COMP_MAX },
@@ -148,6 +191,9 @@ router.get("/latest/:hostname", async (req, res) => {
         cveCount:              cveMatches?.length      ?? 0,
         patchCollectedAt:      patch?.collectedAt      ?? null,
         complianceCollectedAt: compliance?.collectedAt ?? null,
+        patchAgeDays:          patch?.collectedAt
+          ? Math.floor((Date.now() - new Date(patch.collectedAt).getTime()) / (1000 * 60 * 60 * 24))
+          : null,
       },
     });
   } catch (e) {
@@ -181,6 +227,9 @@ router.get("/all", async (req, res) => {
           missingCount: patch?.missingCount     ?? 0,
           failedCount:  compliance?.failedCount ?? 0,
           cveCount:     cveMatches?.length      ?? 0,
+          patchAgeDays: patch?.collectedAt
+            ? Math.floor((Date.now() - new Date(patch.collectedAt).getTime()) / (1000 * 60 * 60 * 24))
+            : null,
         },
       });
     }

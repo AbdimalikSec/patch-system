@@ -111,7 +111,7 @@ function NotificationBell({ loginAt }) {
           width: 360, maxHeight: 480,
           background: "var(--panel)", border: "1px solid var(--line)",
           borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
-          zIndex: 1000, overflow: "hidden",
+          zIndex: 9999, overflow: "hidden",
           display: "flex", flexDirection: "column",
         }}>
           {/* Header */}
@@ -282,9 +282,9 @@ export default function Layout({ title, rightControls, children }) {
       </aside>
 
       <main className="main">
-        <div className="topbar">
+        <div className="topbar" style={{ position: "relative", zIndex: 100 }}>
           <div className="title">{title}</div>
-          <div className="controls" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div className="controls" style={{ display: "flex", alignItems: "center",  gap: 10 }}>
             {rightControls}
             {/* Notification bell — shown for all roles */}
             <NotificationBell loginAt={loginAt} />
