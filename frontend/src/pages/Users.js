@@ -21,6 +21,23 @@ function RoleBadge({ role }) {
   );
 }
 
+// ── Validation helpers ────────────────────────────────────────────────────────
+function validateUsername(val) {
+  if (!val || val.trim().length === 0) return "Username is required.";
+  if (val.trim().length < 3) return "Username must be at least 3 characters.";
+  if (val.trim().length > 32) return "Username must be 32 characters or fewer.";
+  if (/^\d+$/.test(val.trim())) return "Username cannot be numbers only.";
+  if (!/^[a-zA-Z0-9._-]+$/.test(val.trim())) return "Username can only contain letters, numbers, dots, hyphens, and underscores.";
+  return "";
+}
+
+function validatePassword(val) {
+  if (!val || val.length === 0) return "Password is required.";
+  if (val.length < 8) return "Password must be at least 8 characters.";
+  if (val.length > 128) return "Password is too long.";
+  return "";
+}
+
 export default function Users() {
   const [users, setUsers]       = useState([]);
   const [loading, setLoading]   = useState(true);
@@ -32,6 +49,10 @@ export default function Users() {
   const [password, setPassword] = useState("");
   const [role, setRole]         = useState("analyst");
   const [creating, setCreating] = useState(false);
+
+  // Inline field errors
+  const [usernameErr, setUsernameErr] = useState("");
+  const [passwordErr, setPasswordErr] = useState("");
 
   // Delete confirmation
   const [deleteId, setDeleteId] = useState(null);
@@ -51,16 +72,40 @@ export default function Users() {
 
   useEffect(() => { loadUsers(); }, []);
 
+  function handleUsernameChange(e) {
+    const val = e.target.value;
+    setUsername(val);
+    setUsernameErr(validateUsername(val));
+  }
+
+  function handlePasswordChange(e) {
+    const val = e.target.value;
+    setPassword(val);
+    setPasswordErr(validatePassword(val));
+  }
+
   async function handleCreate() {
-    if (!username || !password) return;
+    // Run full validation before submitting
+    const uErr = validateUsername(username);
+    const pErr = validatePassword(password);
+    setUsernameErr(uErr);
+    setPasswordErr(pErr);
+    if (uErr || pErr) return;
+
     try {
       setCreating(true);
       setErr("");
       setSuccess("");
-      await axios.post(`${API}/api/auth/users`, { username, password, role });
-      setSuccess(`User "${username}" created successfully.`);
+      await axios.post(`${API}/api/auth/users`, {
+        username: username.trim().toLowerCase(),
+        password,
+        role
+      });
+      setSuccess(`User "${username.trim()}" created successfully.`);
       setUsername("");
       setPassword("");
+      setUsernameErr("");
+      setPasswordErr("");
       setRole("analyst");
       loadUsers();
     } catch (e) {
@@ -83,9 +128,10 @@ export default function Users() {
     }
   }
 
+  const formValid = !usernameErr && !passwordErr && username.trim().length > 0 && password.length > 0;
+
   return (
     <Layout title="User Management">
-      {/* Feedback */}
       {err && (
         <div style={{
           padding: "10px 16px", borderRadius: 8, marginBottom: 20,
@@ -104,25 +150,27 @@ export default function Users() {
       {/* Create user card */}
       <div className="card" style={{ marginBottom: 24 }}>
         <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 20 }}>Add New User</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 180px 120px", gap: 12, alignItems: "end" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 180px 120px", gap: 12, alignItems: "start" }}>
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>Username</div>
             <input
-              className="input" style={{ width: "100%", boxSizing: "border-box" }}
+              className="input" style={{ width: "100%", boxSizing: "border-box", borderColor: usernameErr ? "hsl(350,100%,65%)" : undefined }}
               placeholder="e.g. john.doe"
               value={username}
-              onChange={e => setUsername(e.target.value)}
+              onChange={handleUsernameChange}
             />
+            {usernameErr && <div style={{ fontSize: 11, color: "hsl(350,100%,65%)", marginTop: 4 }}>{usernameErr}</div>}
           </div>
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>Password</div>
             <input
-              className="input" style={{ width: "100%", boxSizing: "border-box" }}
+              className="input" style={{ width: "100%", boxSizing: "border-box", borderColor: passwordErr ? "hsl(350,100%,65%)" : undefined }}
               type="password"
               placeholder="Min 8 characters"
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onChange={handlePasswordChange}
             />
+            {passwordErr && <div style={{ fontSize: 11, color: "hsl(350,100%,65%)", marginTop: 4 }}>{passwordErr}</div>}
           </div>
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>Role</div>
@@ -136,14 +184,16 @@ export default function Users() {
               <option value="admin">Admin</option>
             </select>
           </div>
-          <button
-            className="btn"
-            onClick={handleCreate}
-            disabled={creating || !username || !password}
-            style={{ padding: "10px 16px", opacity: creating ? 0.7 : 1 }}
-          >
-            {creating ? "Creating..." : "Add User"}
-          </button>
+          <div style={{ paddingTop: 22 }}>
+            <button
+              className="btn"
+              onClick={handleCreate}
+              disabled={creating || !formValid}
+              style={{ padding: "10px 16px", opacity: creating || !formValid ? 0.5 : 1, width: "100%" }}
+            >
+              {creating ? "Creating..." : "Add User"}
+            </button>
+          </div>
         </div>
 
         {/* Role descriptions */}
@@ -199,36 +249,25 @@ export default function Users() {
                       <div style={{ fontWeight: 700, fontSize: 14 }}>{u.username}</div>
                     </div>
                   </td>
-                  <td style={{ padding: "16px 24px" }}>
-                    <RoleBadge role={u.role} />
-                  </td>
+                  <td style={{ padding: "16px 24px" }}><RoleBadge role={u.role} /></td>
                   <td style={{ padding: "16px 24px", fontSize: 12, color: "var(--muted)" }}>
                     {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "-"}
                   </td>
                   <td style={{ padding: "16px 24px", textAlign: "center" }}>
                     {deleteId === u._id ? (
                       <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-                        <button
-                          className="btn"
-                          onClick={() => handleDelete(u._id, u.username)}
-                          style={{ fontSize: 11, padding: "5px 12px", background: "hsl(350,100%,65%)", color: "#fff", border: "none" }}
-                        >
+                        <button className="btn" onClick={() => handleDelete(u._id, u.username)}
+                          style={{ fontSize: 11, padding: "5px 12px", background: "hsl(350,100%,65%)", color: "#fff", border: "none" }}>
                           Confirm
                         </button>
-                        <button
-                          className="btn"
-                          onClick={() => setDeleteId(null)}
-                          style={{ fontSize: 11, padding: "5px 12px" }}
-                        >
+                        <button className="btn" onClick={() => setDeleteId(null)}
+                          style={{ fontSize: 11, padding: "5px 12px" }}>
                           Cancel
                         </button>
                       </div>
                     ) : (
-                      <button
-                        className="btn"
-                        onClick={() => setDeleteId(u._id)}
-                        style={{ fontSize: 11, padding: "5px 12px", color: "hsl(350,100%,65%)", borderColor: "hsla(350,100%,65%,0.3)" }}
-                      >
+                      <button className="btn" onClick={() => setDeleteId(u._id)}
+                        style={{ fontSize: 11, padding: "5px 12px", color: "hsl(350,100%,65%)", borderColor: "hsla(350,100%,65%,0.3)" }}>
                         Delete
                       </button>
                     )}

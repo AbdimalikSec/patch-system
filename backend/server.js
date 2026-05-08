@@ -13,18 +13,19 @@ app.use(express.json());
 connectDB();
 
 // ── Public routes ─────────────────────────────────────────────────────────────
-app.use("/api/auth",   require("./routes/auth"));
-app.use("/api/ingest", require("./routes/ingest"));
-app.use("/api/health", require("./routes/health"));
+app.use("/api/auth",         require("./routes/auth"));
+app.use("/api/ingest",       require("./routes/ingest"));
+app.use("/api/health",       require("./routes/health"));
 
 // ── Protected routes ──────────────────────────────────────────────────────────
-app.use("/api/patches",    requireAuth, require("./routes/patches"));
-app.use("/api/compliance", requireAuth, require("./routes/compliance"));
-app.use("/api/meta",       requireAuth, require("./routes/meta"));
-app.use("/api/risk",       requireAuth, require("./routes/risk"));
-app.use("/api/assets",     requireAuth, require("./routes/assets"));
-app.use("/api/dashboard",  requireAuth, require("./routes/dashboard"));
-app.use("/api/agents",     requireAuth, require("./routes/agents"));
+app.use("/api/patches",       requireAuth, require("./routes/patches"));
+app.use("/api/compliance",    requireAuth, require("./routes/compliance"));
+app.use("/api/meta",          requireAuth, require("./routes/meta"));
+app.use("/api/risk",          requireAuth, require("./routes/risk"));
+app.use("/api/assets",        requireAuth, require("./routes/assets"));
+app.use("/api/dashboard",     requireAuth, require("./routes/dashboard"));
+app.use("/api/agents",        requireAuth, require("./routes/agents"));
+app.use("/api/notifications", requireAuth, require("./routes/notifications"));
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

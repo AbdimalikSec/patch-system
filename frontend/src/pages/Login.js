@@ -11,12 +11,24 @@ export default function Login() {
   const [err, setErr]           = useState("");
   const [loading, setLoading]   = useState(false);
 
+  function validate() {
+    const u = username.trim();
+    const p = password;
+    if (!u) return "Username is required.";
+    if (u.length < 3) return "Username must be at least 3 characters.";
+    if (!p) return "Password is required.";
+    if (p.length < 8) return "Password must be at least 8 characters.";
+    return "";
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setErr("");
+    const validationErr = validate();
+    if (validationErr) { setErr(validationErr); return; }
     setLoading(true);
     try {
-      await login(username, password);
+      await login(username.trim(), password);
       navigate("/");
     } catch (e) {
       setErr(e?.response?.data?.error || "Invalid credentials");
@@ -32,7 +44,6 @@ export default function Login() {
     }}>
       <div style={{ width: "100%", maxWidth: 400, padding: "0 24px" }}>
 
-        {/* Logo / Title */}
         <div style={{ textAlign: "center", marginBottom: 40 }}>
           <div style={{
             width: 56, height: 56, borderRadius: 16, background: "var(--accent-muted)",
@@ -45,7 +56,6 @@ export default function Login() {
           </div>
         </div>
 
-        {/* Card */}
         <div className="card" style={{ padding: 32 }}>
           <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 24 }}>Sign in to your account</div>
 
@@ -59,7 +69,7 @@ export default function Login() {
             </div>
           )}
 
-          <div onSubmit={handleSubmit} style={{ display: "grid", gap: 16 }}>
+          <form onSubmit={handleSubmit} style={{ display: "grid", gap: 16 }}>
             <div>
               <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                 Username
@@ -69,8 +79,9 @@ export default function Login() {
                 style={{ width: "100%", boxSizing: "border-box" }}
                 placeholder="Enter username"
                 value={username}
-                onChange={e => setUsername(e.target.value)}
+                onChange={e => { setUsername(e.target.value); setErr(""); }}
                 autoFocus
+                autoComplete="username"
               />
             </div>
 
@@ -84,15 +95,15 @@ export default function Login() {
                 type="password"
                 placeholder="Enter password"
                 value={password}
-                onChange={e => setPassword(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleSubmit(e)}
+                onChange={e => { setPassword(e.target.value); setErr(""); }}
+                autoComplete="current-password"
               />
             </div>
 
             <button
               className="btn"
-              onClick={handleSubmit}
-              disabled={loading || !username || !password}
+              type="submit"
+              disabled={loading}
               style={{
                 width: "100%", padding: "12px", marginTop: 8,
                 fontSize: 14, fontWeight: 700,
@@ -102,7 +113,7 @@ export default function Login() {
             >
               {loading ? "Signing in..." : "Sign In"}
             </button>
-          </div>
+          </form>
         </div>
 
         <div style={{ textAlign: "center", marginTop: 20, fontSize: 12, color: "var(--muted)" }}>
