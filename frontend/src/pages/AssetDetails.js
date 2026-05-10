@@ -55,7 +55,6 @@ export default function AssetDetails() {
   const [patchRes, setPatchRes] = useState(null);
   const [compRes, setCompRes]   = useState(null);
   const [checksRes, setChecksRes] = useState([]);
-  const [agentLive, setAgentLive] = useState(null); // live from Wazuh API
 
   const [err, setErr]         = useState("");
   const [loading, setLoading] = useState(true);
@@ -72,18 +71,16 @@ export default function AssetDetails() {
       try {
         setLoading(true);
         setErr("");
-        const [r, p, c, ch, ag] = await Promise.all([
+        const [r, p, c, ch] = await Promise.all([
           axios.get(`${API}/api/risk/latest/${encodeURIComponent(hostname)}`),
           axios.get(`${API}/api/patches/latest/${encodeURIComponent(hostname)}`),
           axios.get(`${API}/api/compliance/latest/${encodeURIComponent(hostname)}`),
           axios.get(`${API}/api/compliance/checks/${encodeURIComponent(hostname)}`),
-          axios.get(`${API}/api/agents/status/${encodeURIComponent(hostname)}`).catch(() => ({ data: null })),
         ]);
         setRiskRes(r.data);
         setPatchRes(p.data);
         setCompRes(c.data);
         setChecksRes(ch.data?.data || []);
-        setAgentLive(ag.data?.data || null);
       } catch (e) {
         setErr(e?.message || "Failed to load asset details");
       } finally {
@@ -96,11 +93,10 @@ export default function AssetDetails() {
   const patch  = patchRes?.data || null;
   const comp   = compRes?.data || null;
 
-  // Live from Wazuh API — falls back to stale data if Wazuh unreachable
-  const agentStatus   = agentLive?.status   || comp?.raw?.agent?.status;
-  const agentLastSeen = agentLive?.lastKeepAlive || comp?.raw?.agent?.lastKeepAlive || comp?.raw?.agent?.dateAdd || null;
-  const osName        = agentLive?.os        || comp?.raw?.agent?.os?.name || patch?.os || "-";
-  const ipAddr        = agentLive?.ip        || comp?.raw?.agent?.ip || patch?.raw?.ip || "-";
+  const agentStatus   = comp?.raw?.agent?.status;
+  const agentLastSeen = comp?.raw?.agent?.lastKeepAlive || comp?.raw?.agent?.dateAdd || null;
+  const osName        = comp?.raw?.agent?.os?.name || patch?.os || "-";
+  const ipAddr        = comp?.raw?.agent?.ip || patch?.raw?.ip || "-";
 
   const patchList = useMemo(() => {
     if (!patch?.missing) return [];
@@ -351,13 +347,44 @@ export default function AssetDetails() {
             {tab === "risk" && (
               <div className="card">
                 <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 16 }}>Risk Intelligence Explanation</div>
+
+                {/* Exploit warning banner */}
+                {risk?.breakdown?.hasExploits && (
+                  <div style={{
+                    padding: "12px 18px", borderRadius: 8, marginBottom: 20,
+                    background: "hsla(350,100%,65%,0.1)", border: "1px solid hsla(350,100%,65%,0.4)",
+                    display: "flex", alignItems: "flex-start", gap: 12,
+                  }}>
+                    <div style={{ fontSize: 20 }}>🔥</div>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: 14, color: "hsl(350,100%,65%)" }}>
+                        Active Exploit Alert — {risk.breakdown.exploitCount} CVE{risk.breakdown.exploitCount > 1 ? "s" : ""} have public exploit code
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+                        Known exploit code exists for vulnerabilities on this asset. Risk score boosted by 25%. Patch immediately.
+                      </div>
+                      {risk.breakdown.exploitCVEIds?.length > 0 && (
+                        <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {risk.breakdown.exploitCVEIds.map(id => (
+                            <span key={id} style={{
+                              fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4,
+                              background: "hsla(350,100%,65%,0.15)", color: "hsl(350,100%,65%)",
+                              border: "1px solid hsla(350,100%,65%,0.3)",
+                            }}>{id}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="tableWrap" style={{ padding: 24 }}>
                   {Array.isArray(risk.reasons) && risk.reasons.length > 0 ? (
                     <div style={{ display: "grid", gap: 12 }}>
                       {risk.reasons.map((x, i) => (
                         <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                          <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", marginTop: 6 }}></div>
-                          <div style={{ fontSize: "15px", lineHeight: "1.6" }}>{x}</div>
+                          <div style={{ width: 8, height: 8, borderRadius: "50%", background: x.includes("EXPLOIT") ? "hsl(350,100%,65%)" : "var(--accent)", marginTop: 6 }}></div>
+                          <div style={{ fontSize: "15px", lineHeight: "1.6", color: x.includes("EXPLOIT") ? "hsl(350,100%,65%)" : "inherit" }}>{x}</div>
                         </div>
                       ))}
                     </div>

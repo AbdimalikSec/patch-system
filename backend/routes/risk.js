@@ -105,7 +105,13 @@ async function computeRisk({ patch, compliance, meta, cveMatches }) {
   const cvssValue  = maxCVSS > 0 ? maxCVSS : (missingCount / PATCH_MAX) * 10;
   // Apply age factor to CVSS value before normalising
   const cvssAged   = cvssValue * ageFactor;
-  const cvssFactor = clamp(cvssAged / 10.0, 0, 1);
+
+  // ── Exploit Intelligence Boost ────────────────────────────────────────────
+  const exploitCVEs  = cveMatches ? cveMatches.filter(c => c.hasExploit) : [];
+  const hasExploits  = exploitCVEs.length > 0;
+  // If any matched CVE has a known public exploit, boost CVSS factor by 25%
+  const exploitBoost = hasExploits ? 1.25 : 1.0;
+  const cvssFactor   = clamp((cvssAged * exploitBoost) / 10.0, 0, 1);
 
   // ── ComplianceFactor ──────────────────────────────────────────────────────
   const complianceFactor = clamp(failedCount / COMP_MAX, 0, 1);
@@ -139,7 +145,10 @@ async function computeRisk({ patch, compliance, meta, cveMatches }) {
     `Asset role: ${role} (criticality=${criticality}, multiplier=${criticalityMultiplier.toFixed(2)})`,
     `CVE data: ${cvssSource}`,
     `Patch age: ${ageLabel}`,
-    `CVSS factor = (${cvssValue.toFixed(1)} × ${ageFactor}) / 10 = ${cvssFactor.toFixed(3)} (weight ${W_CVSS})`,
+    hasExploits
+      ? `⚠️  EXPLOIT ALERT: ${exploitCVEs.length} CVE(s) have known public exploit code — CVSS boosted by 25%`
+      : `Exploit intelligence: no known public exploits found`,
+    `CVSS factor = (${cvssValue.toFixed(1)} × ${ageFactor} × ${exploitBoost}) / 10 = ${cvssFactor.toFixed(3)} (weight ${W_CVSS})`,
     `CIS failures: ${failedCount} → compliance factor = ${complianceFactor.toFixed(3)} (weight ${W_COMP})`,
     `Base risk = (${W_CVSS} × ${cvssFactor.toFixed(3)}) + (${W_COMP} × ${complianceFactor.toFixed(3)}) = ${baseRisk.toFixed(3)}`,
     `Final score = ${baseRisk.toFixed(3)} × ${criticalityMultiplier.toFixed(2)} × 100 = ${score}`,
@@ -156,6 +165,9 @@ async function computeRisk({ patch, compliance, meta, cveMatches }) {
     ageFactor,
     patchAgeDays,
     ageLabel,
+    hasExploits,
+    exploitCount: exploitCVEs.length,
+    exploitCVEIds: exploitCVEs.map(c => c.cveId),
     cveSeverityBreakdown,
     weights:    { cvss: W_CVSS, compliance: W_COMP },
     thresholds: { compMax: COMP_MAX },
