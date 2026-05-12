@@ -42,6 +42,23 @@ const W_COMP    = 0.45;
 const PATCH_MAX = 50;
 const COMP_MAX  = 300;
 
+// Network exposure multiplier — how reachable is this asset from an attacker?
+const EXPOSURE_MULTIPLIER = {
+  internet: 1.0,  // Directly internet-facing — highest exposure
+  dmz:      0.8,  // DMZ — partially exposed
+  internal: 0.5,  // Internal only — requires network access
+  isolated: 0.2,  // Air-gapped / isolated — very low exposure
+};
+
+// Exposure multiplier — scales risk based on network reachability
+// internet-facing assets are 2x more dangerous than isolated ones
+const EXPOSURE_MULTIPLIER = {
+  internet: 1.0,   // Directly reachable from internet — full weight
+  dmz:      0.85,  // Partially exposed through DMZ
+  internal: 0.65,  // Internal network only
+  isolated: 0.4,   // Air-gapped / heavily restricted
+};
+
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
@@ -81,11 +98,33 @@ function computeAgeFactor(collectedAt) {
   return { factor, days, label };
 }
 
+// Exposure multiplier — how reachable is this asset by an attacker
+const EXPOSURE_MULTIPLIERS = {
+  internet: 1.0,  // directly reachable from public internet
+  dmz:      0.8,  // partially exposed
+  internal: 0.5,  // internal network only
+  isolated: 0.2,  // air-gapped or heavily restricted
+};
+
 async function computeRisk({ patch, compliance, meta, cveMatches }) {
-  const missingCount = patch?.missingCount     ?? 0;
-  const failedCount  = compliance?.failedCount ?? 0;
-  const criticality  = meta?.criticality       ?? 0.5;
-  const role         = meta?.role              ?? "workstation";
+  const missingCount    = patch?.missingCount     ?? 0;
+  const failedCount     = compliance?.failedCount ?? 0;
+  const criticality     = meta?.criticality       ?? 0.5;
+  const role            = meta?.role              ?? "workstation";
+  const exposureLevel   = meta?.exposureLevel     ?? "internal";
+  const exposureMult    = EXPOSURE_MULTIPLIER[exposureLevel] ?? 0.5;
+  const exposureLevel = meta?.exposureLevel    ?? "internal";
+
+  // ── Exposure Multiplier ───────────────────────────────────────────────────
+  // Network exposure amplifies risk — an internet-facing asset with the same
+  // vulnerability is far more dangerous than an isolated internal machine.
+  const EXPOSURE_MULTIPLIERS = {
+    internet: 1.5,   // Directly reachable from internet — maximum amplification
+    dmz:      1.25,  // Partially exposed via DMZ
+    internal: 1.0,   // Internal network only — baseline
+    isolated: 0.7,   // Air-gapped or heavily restricted — reduced risk
+  };
+  const exposureMultiplier = EXPOSURE_MULTIPLIER[exposureLevel] || 1.0;
 
   // ── Patch Age Factor ──────────────────────────────────────────────────────
   const { factor: ageFactor, days: patchAgeDays, label: ageLabel } =
@@ -121,7 +160,7 @@ async function computeRisk({ patch, compliance, meta, cveMatches }) {
 
   // ── Final score ───────────────────────────────────────────────────────────
   const baseRisk = (W_CVSS * cvssFactor) + (W_COMP * complianceFactor);
-  const score    = clamp(Math.round(baseRisk * criticalityMultiplier * 100), 0, 100);
+  const score    = clamp(Math.round(baseRisk * criticalityMultiplier * exposureMult * 100), 0, 100);
 
   // ── Risk tier ─────────────────────────────────────────────────────────────
   let priority;
@@ -143,6 +182,9 @@ async function computeRisk({ patch, compliance, meta, cveMatches }) {
   // ── Explainable reasons ───────────────────────────────────────────────────
   const reasons = [
     `Asset role: ${role} (criticality=${criticality}, multiplier=${criticalityMultiplier.toFixed(2)})`,
+    `Network exposure: ${exposureLevel} (multiplier=${exposureMult}) — ${exposureLevel === 'internet' ? 'directly reachable from internet, highest attack surface' : exposureLevel === 'dmz' ? 'DMZ-protected, partially exposed' : exposureLevel === 'isolated' ? 'isolated network, lowest attack surface' : 'internal network only'}`,
+    `Network exposure: ${exposureLevel} (multiplier=${exposureMult}) — ${exposureLevel === "internet" ? "directly reachable from public internet" : exposureLevel === "dmz" ? "partially exposed via DMZ" : exposureLevel === "isolated" ? "air-gapped, minimal exposure" : "internal network only"}`,
+
     `CVE data: ${cvssSource}`,
     `Patch age: ${ageLabel}`,
     hasExploits
@@ -165,6 +207,10 @@ async function computeRisk({ patch, compliance, meta, cveMatches }) {
     ageFactor,
     patchAgeDays,
     ageLabel,
+    exposureLevel,
+    exposureMult,
+    exposureLevel,
+    exposureMult,
     hasExploits,
     exploitCount: exploitCVEs.length,
     exploitCVEIds: exploitCVEs.map(c => c.cveId),
