@@ -52,24 +52,6 @@ router.get("/all", async (req, res) => {
   }
 });
 
-// GET /api/meta/:hostname
-router.get("/:hostname", async (req, res) => {
-  try {
-    const doc = await AssetMeta.findOne({ hostname: req.params.hostname }).lean();
-    if (!doc) return res.json({ ok: true, data: null });
-    res.json({
-      ok: true,
-      data: {
-        ...doc,
-        exposureMultiplier: EXPOSURE_MULTIPLIER[doc.exposureLevel] || 0.5,
-      }
-    });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ ok: false, error: "server_error" });
-  }
-});
-
 // PATCH /api/meta/:hostname/exposure — update exposure level only (admin quick action)
 router.patch("/:hostname/exposure", async (req, res) => {
   try {
@@ -90,6 +72,24 @@ router.patch("/:hostname/exposure", async (req, res) => {
     );
     res.json({ ok: true, data: doc });
   } catch (e) {
+    res.status(500).json({ ok: false, error: "server_error" });
+  }
+});
+
+// GET /api/meta/:hostname
+router.get("/:hostname", async (req, res) => {
+  try {
+    const doc = await AssetMeta.findOne({ hostname: req.params.hostname }).lean();
+    if (!doc) return res.json({ ok: true, data: null });
+    res.json({
+      ok: true,
+      data: {
+        ...doc,
+        exposureMultiplier: EXPOSURE_MULTIPLIER[doc.exposureLevel] || 0.5,
+      }
+    });
+  } catch (e) {
+    console.error(e);
     res.status(500).json({ ok: false, error: "server_error" });
   }
 });
