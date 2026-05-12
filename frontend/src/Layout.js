@@ -25,6 +25,7 @@ const ICONS = {
   compliance: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>,
   evaluation: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>,
   users:      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>,
+  network:    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="6" height="6" rx="1"></rect><rect x="16" y="2" width="6" height="6" rx="1"></rect><rect x="9" y="16" width="6" height="6" rx="1"></rect><path d="M5 8v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"></path><line x1="12" y1="14" x2="12" y2="12"></line></svg>,
 };
 
 const ROLE_COLOR = {
@@ -225,6 +226,7 @@ export default function Layout({ title, rightControls, children }) {
               <NavItem to="/backlog"    label="Patch Backlog"  icon={ICONS.backlog}    />
               <NavItem to="/compliance" label="Compliance"    icon={ICONS.compliance} />
               <NavItem to="/evaluation" label="Evaluation"    icon={ICONS.evaluation} />
+              <NavItem to="/network"    label="Network Map"   icon={ICONS.network}    />
               {role === "admin" && (
                 <NavItem to="/users" label="User Management" icon={ICONS.users} />
               )}
@@ -284,7 +286,7 @@ export default function Layout({ title, rightControls, children }) {
       <main className="main">
         <div className="topbar" style={{ position: "relative", zIndex: 100 }}>
           <div className="title">{title}</div>
-          <div className="controls" style={{ display: "flex", alignItems: "center",  gap: 10 }}>
+          <div className="controls" style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {rightControls}
             {/* Notification bell — shown for all roles */}
             <NotificationBell loginAt={loginAt} />

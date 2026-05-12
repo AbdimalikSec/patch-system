@@ -10,6 +10,7 @@ import Compliance   from "./pages/Compliance";
 import AssetDetails from "./pages/AssetDetails";
 import Evaluation   from "./pages/Evaluation";
 import Users        from "./pages/Users";
+import NetworkMap   from "./pages/NetworkMap";
 
 export default function App() {
   return (
@@ -34,6 +35,9 @@ export default function App() {
           } />
           <Route path="/evaluation" element={
             <ProtectedRoute roles={["admin", "analyst"]}><Evaluation /></ProtectedRoute>
+          } />
+          <Route path="/network" element={
+            <ProtectedRoute roles={["admin", "analyst"]}><NetworkMap /></ProtectedRoute>
           } />
 
           {/* Admin + Analyst + Auditor */}
