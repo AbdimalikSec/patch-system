@@ -1,5 +1,5 @@
 const router      = require("express").Router();
-const AssetGroup  = require("../models/AssetGroup");
+const AssetGroup  = require("../models/AssetsGroup");
 const Patch       = require("../models/Patch");
 const Compliance  = require("../models/Compliance");
 const AssetMeta   = require("../models/AssetMeta");
