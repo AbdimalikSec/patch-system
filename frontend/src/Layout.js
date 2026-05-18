@@ -26,6 +26,7 @@ const ICONS = {
   evaluation: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>,
   users:      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>,
   network:    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="6" height="6" rx="1"></rect><rect x="16" y="2" width="6" height="6" rx="1"></rect><rect x="9" y="16" width="6" height="6" rx="1"></rect><path d="M5 8v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"></path><line x1="12" y1="14" x2="12" y2="12"></line></svg>,
+  groups:     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="7" r="4"></circle><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path><path d="M21 21v-2a4 4 0 0 0-3-3.87"></path></svg>,
 };
 
 const ROLE_COLOR = {
@@ -51,7 +52,6 @@ function NotificationBell({ loginAt }) {
       .finally(() => setLoading(false));
   }, [loginAt]);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     function handleClick(e) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
@@ -71,7 +71,6 @@ function NotificationBell({ loginAt }) {
 
   return (
     <div ref={dropdownRef} style={{ position: "relative" }}>
-      {/* Bell button */}
       <button
         onClick={() => setOpen(o => !o)}
         style={{
@@ -90,7 +89,6 @@ function NotificationBell({ loginAt }) {
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
           <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
         </svg>
-        {/* Red badge */}
         {count > 0 && (
           <div style={{
             position: "absolute", top: -4, right: -4,
@@ -105,7 +103,6 @@ function NotificationBell({ loginAt }) {
         )}
       </button>
 
-      {/* Dropdown */}
       {open && (
         <div style={{
           position: "absolute", top: 44, right: 0,
@@ -115,7 +112,6 @@ function NotificationBell({ loginAt }) {
           zIndex: 9999, overflow: "hidden",
           display: "flex", flexDirection: "column",
         }}>
-          {/* Header */}
           <div style={{
             padding: "14px 18px", borderBottom: "1px solid var(--line)",
             display: "flex", justifyContent: "space-between", alignItems: "center",
@@ -132,7 +128,6 @@ function NotificationBell({ loginAt }) {
             )}
           </div>
 
-          {/* Content */}
           <div style={{ overflowY: "auto", maxHeight: 400 }}>
             {loading && (
               <div style={{ padding: 20, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
@@ -183,7 +178,6 @@ function NotificationBell({ loginAt }) {
             ))}
           </div>
 
-          {/* Footer */}
           <div style={{
             padding: "10px 18px", borderTop: "1px solid var(--line)",
             fontSize: 11, color: "var(--muted)", textAlign: "center",
@@ -221,12 +215,13 @@ export default function Layout({ title, rightControls, children }) {
             <NavItem to="/compliance" label="Compliance" icon={ICONS.compliance} />
           ) : (
             <>
-              <NavItem to="/"           label="Overview"      icon={ICONS.overview}   />
-              <NavItem to="/assets"     label="Assets"        icon={ICONS.assets}     />
+              <NavItem to="/"           label="Overview"       icon={ICONS.overview}   />
+              <NavItem to="/assets"     label="Assets"         icon={ICONS.assets}     />
               <NavItem to="/backlog"    label="Patch Backlog"  icon={ICONS.backlog}    />
-              <NavItem to="/compliance" label="Compliance"    icon={ICONS.compliance} />
-              <NavItem to="/evaluation" label="Evaluation"    icon={ICONS.evaluation} />
-              <NavItem to="/network"    label="Network Map"   icon={ICONS.network}    />
+              <NavItem to="/compliance" label="Compliance"     icon={ICONS.compliance} />
+              <NavItem to="/network"    label="Network Map"    icon={ICONS.network}    />
+              <NavItem to="/groups"     label="Asset Groups"   icon={ICONS.groups}     />
+              <NavItem to="/evaluation" label="Evaluation"     icon={ICONS.evaluation} />
               {role === "admin" && (
                 <NavItem to="/users" label="User Management" icon={ICONS.users} />
               )}
@@ -288,7 +283,6 @@ export default function Layout({ title, rightControls, children }) {
           <div className="title">{title}</div>
           <div className="controls" style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {rightControls}
-            {/* Notification bell — shown for all roles */}
             <NotificationBell loginAt={loginAt} />
           </div>
         </div>

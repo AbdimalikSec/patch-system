@@ -11,16 +11,15 @@ import AssetDetails from "./pages/AssetDetails";
 import Evaluation   from "./pages/Evaluation";
 import Users        from "./pages/Users";
 import NetworkMap   from "./pages/NetworkMap";
+import AssetGroups  from "./pages/AssetGroups";
 
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          {/* Public */}
           <Route path="/login" element={<Login />} />
 
-          {/* Admin + Analyst only */}
           <Route path="/" element={
             <ProtectedRoute roles={["admin", "analyst"]}><Overview /></ProtectedRoute>
           } />
@@ -39,18 +38,15 @@ export default function App() {
           <Route path="/network" element={
             <ProtectedRoute roles={["admin", "analyst"]}><NetworkMap /></ProtectedRoute>
           } />
-
-          {/* Admin + Analyst + Auditor */}
+          <Route path="/groups" element={
+            <ProtectedRoute roles={["admin", "analyst"]}><AssetGroups /></ProtectedRoute>
+          } />
           <Route path="/compliance" element={
             <ProtectedRoute roles={["admin", "analyst", "auditor"]}><Compliance /></ProtectedRoute>
           } />
-
-          {/* Admin only */}
           <Route path="/users" element={
             <ProtectedRoute roles={["admin"]}><Users /></ProtectedRoute>
           } />
-
-          {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
