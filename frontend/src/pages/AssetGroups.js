@@ -30,18 +30,6 @@ function priorityColor(p) {
   return { Critical: "hsl(350,100%,65%)", High: "hsl(25,100%,60%)", Medium: "hsl(45,100%,50%)", Low: "hsl(130,60%,50%)" }[p] || "var(--muted)";
 }
 
-function PriorityBadge({ priority, score }) {
-  const c = priorityColor(priority);
-  return (
-    <span style={{
-      fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 4,
-      background: `${c}18`, color: c, border: `1px solid ${c}44`,
-    }}>
-      {priority} {score != null ? `· ${score}` : ""}
-    </span>
-  );
-}
-
 function KpiTile({ label, value, color }) {
   return (
     <div style={{
@@ -74,33 +62,22 @@ function GroupCard({ group, onDelete, onRemoveMember, onAddMember }) {
   const [addingAsset, setAddingAsset] = useState(false);
   const [selectedAdd, setSelectedAdd] = useState("");
   const s = group.stats || {};
+  const pc = priorityColor(s.highestPriority);
   const available = ALL_ASSETS.filter(a => !group.members.includes(a));
-
-  function handleAdd() {
-    if (!selectedAdd) return;
-    onAddMember(group._id, selectedAdd);
-    setSelectedAdd("");
-    setAddingAsset(false);
-  }
 
   return (
     <div style={{
       background: "var(--panel)", borderRadius: 12,
-      border: `1px solid ${group.color}55`,
-      overflow: "hidden", marginBottom: 16,
-      boxShadow: `0 0 0 0 ${group.color}`,
+      border: `1px solid ${group.color}55`, overflow: "hidden", marginBottom: 16,
     }}>
-      {/* Colored top bar */}
       <div style={{ height: 3, background: group.color }} />
 
-      {/* Card header */}
       <div style={{ padding: "18px 22px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <div style={{
             width: 46, height: 46, borderRadius: 10, fontSize: 22,
             background: `${group.color}18`, border: `1px solid ${group.color}44`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
           }}>{group.icon}</div>
           <div>
             <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 3 }}>{group.name}</div>
@@ -112,143 +89,81 @@ function GroupCard({ group, onDelete, onRemoveMember, onAddMember }) {
             </div>
           </div>
         </div>
-
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
-          {s.highestPriority && <PriorityBadge priority={s.highestPriority} score={s.highestRiskScore} />}
-          <button
-            onClick={() => setExpanded(e => !e)}
-            style={{
-              background: "var(--surface)", border: "1px solid var(--line)",
-              borderRadius: 6, padding: "5px 10px", cursor: "pointer",
-              color: "var(--muted)", fontSize: 12,
-            }}
-          >
-            {expanded ? "▲ Collapse" : "▼ Expand"}
-          </button>
-          <button
-            onClick={() => onDelete(group._id, group.name)}
-            style={{
-              background: "hsla(350,100%,65%,0.08)", border: "1px solid hsla(350,100%,65%,0.3)",
-              borderRadius: 6, padding: "5px 10px", cursor: "pointer",
-              color: "hsl(350,100%,65%)", fontSize: 12,
-            }}
-          >
-            Delete
-          </button>
+          {s.highestPriority && (
+            <span style={{
+              fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 4,
+              background: `${pc}18`, color: pc, border: `1px solid ${pc}44`,
+            }}>{s.highestPriority} · {s.highestRiskScore}</span>
+          )}
+          <button onClick={() => setExpanded(e => !e)} style={{
+            background: "var(--surface)", border: "1px solid var(--line)",
+            borderRadius: 6, padding: "5px 10px", cursor: "pointer", color: "var(--muted)", fontSize: 12,
+          }}>{expanded ? "▲ Collapse" : "▼ Expand"}</button>
+          <button onClick={() => onDelete(group._id, group.name)} style={{
+            background: "hsla(350,100%,65%,0.08)", border: "1px solid hsla(350,100%,65%,0.3)",
+            borderRadius: 6, padding: "5px 10px", cursor: "pointer", color: "hsl(350,100%,65%)", fontSize: 12,
+          }}>Delete</button>
         </div>
       </div>
 
       {expanded && (
         <div style={{ padding: "0 22px 22px" }}>
-          {/* KPI row */}
           <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-            <KpiTile
-              label="Missing Patches"
-              value={s.totalMissing ?? "—"}
-              color={s.totalMissing > 0 ? "hsl(350,100%,65%)" : "hsl(130,60%,50%)"}
-            />
-            <KpiTile
-              label="CIS Failures"
-              value={s.totalFailed ?? "—"}
-              color={s.totalFailed > 0 ? "hsl(25,100%,60%)" : "hsl(130,60%,50%)"}
-            />
-            <KpiTile
-              label="Total Checks"
-              value={s.totalChecks ?? "—"}
-              color="var(--accent)"
-            />
-            <KpiTile
-              label="Compliance %"
-              value={s.complianceScore != null ? `${s.complianceScore}%` : "—"}
-              color={s.complianceScore != null ? (s.complianceScore >= 70 ? "hsl(130,60%,50%)" : s.complianceScore >= 40 ? "hsl(45,100%,50%)" : "hsl(350,100%,65%)") : "var(--muted)"}
-            />
-            <KpiTile
-              label="Highest Risk"
-              value={s.highestRiskScore ?? "—"}
-              color={priorityColor(s.highestPriority)}
-            />
+            <KpiTile label="Missing Patches" value={s.totalMissing ?? "—"} color={s.totalMissing > 0 ? "hsl(350,100%,65%)" : "hsl(130,60%,50%)"} />
+            <KpiTile label="CIS Failures" value={s.totalFailed ?? "—"} color={s.totalFailed > 0 ? "hsl(25,100%,60%)" : "hsl(130,60%,50%)"} />
+            <KpiTile label="Total Checks" value={s.totalChecks ?? "—"} color="var(--accent)" />
+            <KpiTile label="Compliance %" value={s.complianceScore != null ? `${s.complianceScore}%` : "—"}
+              color={s.complianceScore != null ? (s.complianceScore >= 70 ? "hsl(130,60%,50%)" : s.complianceScore >= 40 ? "hsl(45,100%,50%)" : "hsl(350,100%,65%)") : "var(--muted)"} />
+            <KpiTile label="Highest Risk" value={s.highestRiskScore ?? "—"} color={priorityColor(s.highestPriority)} />
           </div>
 
           <ComplianceBar value={s.complianceScore} />
 
-          {/* Members */}
           <div style={{ marginTop: 18 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 }}>
-              Members
-            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 }}>Members</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              {group.members.length === 0 && (
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>No members yet — add assets below</span>
-              )}
+              {group.members.length === 0 && <span style={{ fontSize: 12, color: "var(--muted)" }}>No members yet</span>}
               {group.members.map(hostname => (
                 <div key={hostname} style={{
                   display: "flex", alignItems: "center", gap: 6,
                   padding: "5px 12px", borderRadius: 20,
                   background: "var(--surface)", border: "1px solid var(--line)",
                 }}>
-                  <Link
-                    to={`/asset/${encodeURIComponent(hostname)}`}
-                    style={{ fontSize: 13, fontWeight: 600, color: "var(--accent)", textDecoration: "none" }}
-                  >
+                  <Link to={`/asset/${encodeURIComponent(hostname)}`} style={{ fontSize: 13, fontWeight: 600, color: "var(--accent)", textDecoration: "none" }}>
                     {hostname}
                   </Link>
-                  <button
-                    onClick={() => onRemoveMember(group._id, hostname)}
-                    title={`Remove ${hostname}`}
-                    style={{
-                      background: "none", border: "none",
-                      color: "var(--muted)", cursor: "pointer",
-                      fontSize: 16, lineHeight: 1, padding: 0,
-                      display: "flex", alignItems: "center",
-                    }}
-                  >×</button>
+                  <button onClick={() => onRemoveMember(group._id, hostname)} style={{
+                    background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 0,
+                  }}>×</button>
                 </div>
               ))}
-
-              {/* Add asset inline */}
               {available.length > 0 && !addingAsset && (
-                <button
-                  onClick={() => setAddingAsset(true)}
-                  style={{
-                    padding: "5px 12px", borderRadius: 20,
-                    background: "transparent", border: "1px dashed var(--line)",
-                    color: "var(--muted)", cursor: "pointer", fontSize: 12,
-                  }}
-                >+ Add asset</button>
+                <button onClick={() => setAddingAsset(true)} style={{
+                  padding: "5px 12px", borderRadius: 20, background: "transparent",
+                  border: "1px dashed var(--line)", color: "var(--muted)", cursor: "pointer", fontSize: 12,
+                }}>+ Add asset</button>
               )}
               {addingAsset && (
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <select
-                    value={selectedAdd}
-                    onChange={e => setSelectedAdd(e.target.value)}
-                    style={{
-                      padding: "5px 10px", borderRadius: 6, fontSize: 12,
-                      background: "var(--surface)", border: "1px solid var(--line)",
-                      color: "var(--text)",
-                    }}
-                  >
+                  <select value={selectedAdd} onChange={e => setSelectedAdd(e.target.value)} style={{
+                    padding: "5px 10px", borderRadius: 6, fontSize: 12,
+                    background: "var(--surface)", border: "1px solid var(--line)", color: "var(--text)",
+                  }}>
                     <option value="">Pick asset...</option>
                     {available.map(a => <option key={a} value={a}>{a}</option>)}
                   </select>
-                  <button
-                    onClick={handleAdd}
-                    disabled={!selectedAdd}
-                    style={{
+                  <button onClick={() => { if (selectedAdd) { onAddMember(group._id, selectedAdd); setSelectedAdd(""); setAddingAsset(false); } }}
+                    disabled={!selectedAdd} style={{
                       padding: "5px 12px", borderRadius: 6, fontSize: 12,
                       background: selectedAdd ? "var(--accent)" : "var(--surface)",
-                      border: "1px solid var(--line)",
-                      color: selectedAdd ? "#000" : "var(--muted)",
+                      border: "1px solid var(--line)", color: selectedAdd ? "#000" : "var(--muted)",
                       cursor: selectedAdd ? "pointer" : "default",
-                    }}
-                  >Add</button>
-                  <button
-                    onClick={() => { setAddingAsset(false); setSelectedAdd(""); }}
-                    style={{
-                      padding: "5px 10px", borderRadius: 6, fontSize: 12,
-                      background: "transparent", border: "1px solid var(--line)",
-                      color: "var(--muted)", cursor: "pointer",
-                    }}
-                  >Cancel</button>
+                    }}>Add</button>
+                  <button onClick={() => { setAddingAsset(false); setSelectedAdd(""); }} style={{
+                    padding: "5px 10px", borderRadius: 6, fontSize: 12,
+                    background: "transparent", border: "1px solid var(--line)", color: "var(--muted)", cursor: "pointer",
+                  }}>Cancel</button>
                 </div>
               )}
             </div>
@@ -260,12 +175,12 @@ function GroupCard({ group, onDelete, onRemoveMember, onAddMember }) {
 }
 
 export default function AssetGroups() {
-  const [groups, setGroups]     = useState([]);
-  const [loading, setLoading]   = useState(true);
+  const [groups, setGroups]         = useState([]);
+  const [loading, setLoading]       = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [toast, setToast]       = useState(null); // { type: "ok"|"err", msg }
+  const [toast, setToast]           = useState(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm]         = useState({ name: "", description: "", icon: "🗂️", owner: "IT", color: "hsl(210,80%,60%)" });
+  const [form, setForm]             = useState({ name: "", description: "", icon: "🗂️", owner: "IT", color: "hsl(210,80%,60%)" });
 
   function showToast(type, msg) {
     setToast({ type, msg });
@@ -332,27 +247,22 @@ export default function AssetGroups() {
     try {
       await axios.delete(`${API}/api/groups/${groupId}/members/${hostname}`);
       load();
-    } catch {
-      showToast("err", "Failed to remove member");
-    }
+    } catch { showToast("err", "Failed to remove member"); }
   }
 
   async function handleAddMember(groupId, hostname) {
     try {
       await axios.post(`${API}/api/groups/${groupId}/members`, { hostname });
       load();
-    } catch {
-      showToast("err", "Failed to add member");
-    }
+    } catch { showToast("err", "Failed to add member"); }
   }
 
-  const totalAssets = [...new Set(groups.flatMap(g => g.members))].length;
+  const totalAssets    = [...new Set(groups.flatMap(g => g.members))].length;
   const criticalGroups = groups.filter(g => g.stats?.highestPriority === "Critical").length;
 
   return (
     <Layout title="Asset Groups">
 
-      {/* Toast */}
       {toast && (
         <div style={{
           position: "fixed", top: 20, right: 20, zIndex: 9999,
@@ -366,157 +276,112 @@ export default function AssetGroups() {
         </div>
       )}
 
-      {/* Top bar — summary + actions */}
+      {/* Summary + action buttons */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <div className="card" style={{ padding: "12px 20px", minWidth: 110 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Groups</div>
-            <div style={{ fontSize: 26, fontWeight: 900 }}>{groups.length}</div>
-          </div>
-          <div className="card" style={{ padding: "12px 20px", minWidth: 110 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Assets</div>
-            <div style={{ fontSize: 26, fontWeight: 900 }}>{totalAssets}</div>
-          </div>
-          <div className="card" style={{ padding: "12px 20px", minWidth: 130 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Critical Groups</div>
-            <div style={{ fontSize: 26, fontWeight: 900, color: criticalGroups > 0 ? "hsl(350,100%,65%)" : "inherit" }}>{criticalGroups}</div>
-          </div>
+          {[
+            { label: "Groups", value: groups.length, color: "var(--text)" },
+            { label: "Assets", value: totalAssets, color: "var(--text)" },
+            { label: "Critical Groups", value: criticalGroups, color: criticalGroups > 0 ? "hsl(350,100%,65%)" : "var(--text)" },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="card" style={{ padding: "12px 20px", minWidth: 110 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{label}</div>
+              <div style={{ fontSize: 26, fontWeight: 900, color }}>{value}</div>
+            </div>
+          ))}
         </div>
-
         <div style={{ display: "flex", gap: 10 }}>
-          <button
-            onClick={handleSeedDefaults}
-            disabled={submitting}
-            style={{
-              padding: "9px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600,
-              background: "transparent", border: "1px solid var(--line)",
-              color: "var(--muted)", cursor: "pointer",
-            }}
-          >
-            🚀 Create Defaults
-          </button>
-          <button
-            onClick={() => setShowCreate(c => !c)}
-            style={{
-              padding: "9px 16px", borderRadius: 8, fontSize: 13, fontWeight: 700,
-              background: "var(--accent)", border: "none",
-              color: "#000", cursor: "pointer",
-            }}
-          >
-            {showCreate ? "✕ Cancel" : "+ New Group"}
-          </button>
+          <button onClick={handleSeedDefaults} disabled={submitting} style={{
+            padding: "9px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+            background: "transparent", border: "1px solid var(--line)", color: "var(--muted)", cursor: "pointer",
+          }}>🚀 Create Defaults</button>
+          <button onClick={() => setShowCreate(c => !c)} style={{
+            padding: "9px 16px", borderRadius: 8, fontSize: 13, fontWeight: 700,
+            background: "var(--accent)", border: "none", color: "#000", cursor: "pointer",
+          }}>{showCreate ? "✕ Cancel" : "+ New Group"}</button>
         </div>
       </div>
 
-      {/* Create form */}
+      {/* Create form — two rows, no collapsing grid */}
       {showCreate && (
         <div className="card" style={{ marginBottom: 24, borderColor: "var(--accent)" }}>
           <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 16 }}>New Group</div>
-          <div style={{ display: "grid", gridTemplateColumns: "56px 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
-            <div>
+
+          {/* Row 1: icon + name side by side */}
+          <div style={{ display: "flex", gap: 12, marginBottom: 12, alignItems: "flex-end" }}>
+            <div style={{ flexShrink: 0, width: 64 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", marginBottom: 5 }}>Icon</div>
-              <input
-                className="input"
-                style={{ textAlign: "center", fontSize: 20, padding: "8px" }}
-                value={form.icon}
-                onChange={e => setForm(f => ({ ...f, icon: e.target.value }))}
-              />
+              <input className="input" style={{ textAlign: "center", fontSize: 20, padding: "8px", width: "64px" }}
+                value={form.icon} onChange={e => setForm(f => ({ ...f, icon: e.target.value }))} />
             </div>
-            <div>
+            <div style={{ flex: 1 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", marginBottom: 5 }}>Group Name *</div>
-              <input
-                className="input"
+              <input className="input" style={{ width: "100%", boxSizing: "border-box" }}
                 placeholder="e.g. Domain Infrastructure"
                 value={form.name}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                onKeyDown={e => e.key === "Enter" && handleCreate()}
-              />
-            </div>
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", marginBottom: 5 }}>Description</div>
-              <input
-                className="input"
-                placeholder="Brief description"
-                value={form.description}
-                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-              />
-            </div>
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", marginBottom: 5 }}>Owner</div>
-              <input
-                className="input"
-                placeholder="IT"
-                value={form.owner}
-                onChange={e => setForm(f => ({ ...f, owner: e.target.value }))}
-              />
+                onKeyDown={e => e.key === "Enter" && handleCreate()} />
             </div>
           </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <div style={{ fontSize: 11, color: "var(--muted)" }}>Color:</div>
+
+          {/* Row 2: description + owner side by side */}
+          <div style={{ display: "flex", gap: 12, marginBottom: 16, alignItems: "flex-end" }}>
+            <div style={{ flex: 2 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", marginBottom: 5 }}>Description</div>
+              <input className="input" style={{ width: "100%", boxSizing: "border-box" }}
+                placeholder="Brief description of this group"
+                value={form.description}
+                onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", marginBottom: 5 }}>Owner</div>
+              <input className="input" style={{ width: "100%", boxSizing: "border-box" }}
+                placeholder="IT"
+                value={form.owner}
+                onChange={e => setForm(f => ({ ...f, owner: e.target.value }))} />
+            </div>
+          </div>
+
+          {/* Row 3: color swatches + create button */}
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>Color:</span>
             {["hsl(210,80%,60%)", "hsl(350,100%,65%)", "hsl(130,60%,50%)", "hsl(45,100%,50%)", "hsl(280,80%,65%)"].map(c => (
-              <div
-                key={c}
-                onClick={() => setForm(f => ({ ...f, color: c }))}
-                style={{
-                  width: 22, height: 22, borderRadius: "50%", background: c,
-                  cursor: "pointer",
-                  outline: form.color === c ? `2px solid ${c}` : "none",
-                  outlineOffset: 2,
-                }}
-              />
+              <div key={c} onClick={() => setForm(f => ({ ...f, color: c }))} style={{
+                width: 22, height: 22, borderRadius: "50%", background: c, cursor: "pointer",
+                outline: form.color === c ? `3px solid ${c}` : "2px solid transparent", outlineOffset: 2,
+              }} />
             ))}
             <div style={{ flex: 1 }} />
-            <button
-              onClick={handleCreate}
-              disabled={submitting || !form.name.trim()}
-              style={{
-                padding: "9px 24px", borderRadius: 8, fontSize: 13, fontWeight: 700,
-                background: form.name.trim() ? "var(--accent)" : "var(--surface)",
-                border: "1px solid var(--line)",
-                color: form.name.trim() ? "#000" : "var(--muted)",
-                cursor: form.name.trim() ? "pointer" : "default",
-              }}
-            >
-              {submitting ? "Creating..." : "Create Group"}
-            </button>
+            <button onClick={handleCreate} disabled={submitting || !form.name.trim()} style={{
+              padding: "9px 24px", borderRadius: 8, fontSize: 13, fontWeight: 700,
+              background: form.name.trim() ? "var(--accent)" : "var(--surface)",
+              border: "1px solid var(--line)",
+              color: form.name.trim() ? "#000" : "var(--muted)",
+              cursor: form.name.trim() ? "pointer" : "default",
+            }}>{submitting ? "Creating..." : "Create Group"}</button>
           </div>
         </div>
       )}
 
-      {/* Empty state */}
+      {loading && <div style={{ color: "var(--muted)", fontSize: 13, padding: 20 }}>Loading groups...</div>}
+
       {!loading && groups.length === 0 && (
         <div className="card" style={{ textAlign: "center", padding: "48px 24px" }}>
           <div style={{ fontSize: 44, marginBottom: 14 }}>🗂️</div>
           <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 8 }}>No groups yet</div>
-          <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 24, maxWidth: 420, margin: "0 auto 24px" }}>
-            Groups let you see combined risk across multiple assets. Click "Create Defaults" to set up Domain Infrastructure and Security Operations groups automatically.
+          <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 24 }}>
+            Groups show combined risk across multiple assets — useful for department-level reporting.
           </div>
-          <button
-            onClick={handleSeedDefaults}
-            disabled={submitting}
-            style={{
-              padding: "10px 24px", borderRadius: 8, fontSize: 13, fontWeight: 700,
-              background: "var(--accent)", border: "none", color: "#000", cursor: "pointer",
-            }}
-          >
-            🚀 Create Default Groups
-          </button>
+          <button onClick={handleSeedDefaults} disabled={submitting} style={{
+            padding: "10px 24px", borderRadius: 8, fontSize: 13, fontWeight: 700,
+            background: "var(--accent)", border: "none", color: "#000", cursor: "pointer",
+          }}>🚀 Create Default Groups</button>
         </div>
       )}
 
-      {loading && (
-        <div style={{ color: "var(--muted)", fontSize: 13, padding: 20 }}>Loading groups...</div>
-      )}
-
-      {/* Group cards */}
       {!loading && groups.map(group => (
-        <GroupCard
-          key={group._id}
-          group={group}
-          onDelete={handleDelete}
-          onRemoveMember={handleRemoveMember}
-          onAddMember={handleAddMember}
-        />
+        <GroupCard key={group._id} group={group}
+          onDelete={handleDelete} onRemoveMember={handleRemoveMember} onAddMember={handleAddMember} />
       ))}
 
     </Layout>

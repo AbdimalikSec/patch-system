@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import axios from "axios";
 import Layout from "../Layout";
 import { useParams } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 const API = process.env.REACT_APP_API_BASE || "http://localhost:5000";
+
+const USERS = ["admin", "analyst"];
 
 function badge(priority) {
   const p = (priority || "low").toLowerCase();
@@ -25,6 +28,14 @@ function resultBadge(result) {
   return "badge";
 }
 
+function ticketStatusColor(s) {
+  return { open: "hsl(350,100%,65%)", "in-progress": "hsl(45,100%,50%)", resolved: "hsl(130,60%,50%)" }[s] || "var(--muted)";
+}
+
+function ticketStatusLabel(s) {
+  return { open: "Open", "in-progress": "In Progress", resolved: "Resolved" }[s] || s;
+}
+
 function TabButton({ active, children, onClick }) {
   return (
     <button className={`btn-tab ${active ? "active" : ""}`} onClick={onClick}>
@@ -33,38 +44,251 @@ function TabButton({ active, children, onClick }) {
   );
 }
 
-function Modal({ open, title, onClose, children }) {
+function Modal({ open, onClose, children }) {
   if (!open) return null;
   return (
     <div className="modalOverlay" onClick={onClose}>
-      <div className="modalContent" onClick={(e) => e.stopPropagation()}>
-        <div className="modalHeader">
-          <div className="title" style={{ fontSize: "20px" }}>{title}</div>
-          <button className="btn" style={{ background: "transparent", border: "1px solid var(--line)", color: "var(--muted)" }} onClick={onClose}>Close</button>
-        </div>
-        <div style={{ marginTop: 12 }}>{children}</div>
+      <div className="modalContent" onClick={e => e.stopPropagation()}>
+        {children}
       </div>
     </div>
   );
 }
 
+// ── Create Ticket Modal ───────────────────────────────────────────────────────
+function CreateTicketModal({ check, hostname, onCreated, onClose }) {
+  const { user } = useAuth();
+  const [form, setForm] = useState({
+    priority: check?.result === "failed" ? "High" : "Medium",
+    assignedTo: user?.username || "admin",
+    notes: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr]       = useState("");
+
+  async function handleSubmit() {
+    setSaving(true);
+    setErr("");
+    try {
+      await axios.post(`${API}/api/tickets`, {
+        assetHostname: hostname,
+        checkId:       check.checkId,
+        title:         check.title,
+        remediation:   check.remediation || "",
+        priority:      form.priority,
+        assignedTo:    form.assignedTo,
+        notes:         form.notes,
+      });
+      onCreated();
+      onClose();
+    } catch (e) {
+      setErr(e?.response?.data?.error || "Failed to create ticket");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ padding: 4 }}>
+      <div className="modalHeader" style={{ marginBottom: 20 }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800 }}>Create Remediation Ticket</div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Check {check?.checkId} · {hostname}</div>
+        </div>
+        <button className="btn" style={{ background: "transparent", border: "1px solid var(--line)", color: "var(--muted)" }} onClick={onClose}>Close</button>
+      </div>
+
+      {/* Check title */}
+      <div style={{ padding: "12px 16px", background: "var(--surface)", borderRadius: 8, border: "1px solid var(--line)", marginBottom: 16 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 4 }}>FAILED CHECK</div>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>{check?.title}</div>
+      </div>
+
+      {/* Remediation preview */}
+      {check?.remediation && (
+        <div style={{ padding: "12px 16px", background: "var(--accent-muted)", borderRadius: 8, border: "1px solid var(--accent-border)", marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 4 }}>REMEDIATION STEPS</div>
+          <div style={{ fontSize: 13, lineHeight: 1.6 }}>{check.remediation}</div>
+        </div>
+      )}
+
+      {/* Form fields */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", marginBottom: 6 }}>Priority</div>
+          <select className="input" value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))}>
+            {["Critical", "High", "Medium", "Low"].map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", marginBottom: 6 }}>Assign To</div>
+          <select className="input" value={form.assignedTo} onChange={e => setForm(f => ({ ...f, assignedTo: e.target.value }))}>
+            {USERS.map(u => <option key={u} value={u}>{u}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", marginBottom: 6 }}>Notes (optional)</div>
+        <textarea
+          className="input"
+          rows={3}
+          placeholder="Any additional context, steps taken, or observations..."
+          value={form.notes}
+          onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+          style={{ width: "100%", resize: "vertical", fontFamily: "inherit" }}
+        />
+      </div>
+
+      {err && (
+        <div style={{ padding: "8px 12px", borderRadius: 6, marginBottom: 12, background: "hsla(350,100%,65%,0.1)", border: "1px solid hsla(350,100%,65%,0.3)", color: "hsl(350,100%,65%)", fontSize: 13 }}>
+          {err}
+        </div>
+      )}
+
+      <button
+        onClick={handleSubmit}
+        disabled={saving}
+        style={{
+          width: "100%", padding: "10px", borderRadius: 8, fontSize: 14, fontWeight: 700,
+          background: "var(--accent)", border: "none", color: "#000", cursor: "pointer",
+          opacity: saving ? 0.7 : 1,
+        }}
+      >
+        {saving ? "Creating..." : "Create Ticket"}
+      </button>
+    </div>
+  );
+}
+
+// ── Ticket Detail Modal ───────────────────────────────────────────────────────
+function TicketDetailModal({ ticket, onUpdated, onDeleted, onClose }) {
+  const [status, setStatus]       = useState(ticket.status);
+  const [assignedTo, setAssignedTo] = useState(ticket.assignedTo || "");
+  const [notes, setNotes]         = useState(ticket.notes || "");
+  const [saving, setSaving]       = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await axios.patch(`${API}/api/tickets/${ticket._id}`, { status, assignedTo, notes });
+      onUpdated();
+      onClose();
+    } catch {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!window.confirm("Delete this ticket?")) return;
+    try {
+      await axios.delete(`${API}/api/tickets/${ticket._id}`);
+      onDeleted();
+      onClose();
+    } catch {}
+  }
+
+  const sc = ticketStatusColor(status);
+
+  return (
+    <div style={{ padding: 4 }}>
+      <div className="modalHeader" style={{ marginBottom: 20 }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800 }}>Ticket — Check {ticket.checkId}</div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>{ticket.assetHostname} · Created {new Date(ticket.createdAt).toLocaleDateString()}</div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={handleDelete} style={{ padding: "6px 12px", borderRadius: 6, fontSize: 12, background: "hsla(350,100%,65%,0.08)", border: "1px solid hsla(350,100%,65%,0.3)", color: "hsl(350,100%,65%)", cursor: "pointer" }}>Delete</button>
+          <button className="btn" style={{ background: "transparent", border: "1px solid var(--line)", color: "var(--muted)" }} onClick={onClose}>Close</button>
+        </div>
+      </div>
+
+      {/* Title */}
+      <div style={{ padding: "12px 16px", background: "var(--surface)", borderRadius: 8, border: "1px solid var(--line)", marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>{ticket.title}</div>
+      </div>
+
+      {/* Remediation */}
+      {ticket.remediation && (
+        <div style={{ padding: "12px 16px", background: "var(--accent-muted)", borderRadius: 8, border: "1px solid var(--accent-border)", marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 4 }}>REMEDIATION</div>
+          <div style={{ fontSize: 13, lineHeight: 1.6 }}>{ticket.remediation}</div>
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", marginBottom: 6 }}>Status</div>
+          <select className="input" value={status} onChange={e => setStatus(e.target.value)}
+            style={{ color: sc, fontWeight: 700 }}>
+            <option value="open">Open</option>
+            <option value="in-progress">In Progress</option>
+            <option value="resolved">Resolved</option>
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", marginBottom: 6 }}>Assigned To</div>
+          <select className="input" value={assignedTo} onChange={e => setAssignedTo(e.target.value)}>
+            {USERS.map(u => <option key={u} value={u}>{u}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", marginBottom: 6 }}>Notes</div>
+        <textarea className="input" rows={3} value={notes} onChange={e => setNotes(e.target.value)}
+          style={{ width: "100%", resize: "vertical", fontFamily: "inherit" }} />
+      </div>
+
+      {ticket.resolvedAt && (
+        <div style={{ fontSize: 12, color: "hsl(130,60%,50%)", marginBottom: 12 }}>
+          ✓ Resolved on {new Date(ticket.resolvedAt).toLocaleString()}
+        </div>
+      )}
+
+      <button onClick={handleSave} disabled={saving} style={{
+        width: "100%", padding: "10px", borderRadius: 8, fontSize: 14, fontWeight: 700,
+        background: "var(--accent)", border: "none", color: "#000", cursor: "pointer",
+        opacity: saving ? 0.7 : 1,
+      }}>{saving ? "Saving..." : "Save Changes"}</button>
+    </div>
+  );
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
 export default function AssetDetails() {
   const { hostname } = useParams();
 
-  const [riskRes, setRiskRes]   = useState(null);
-  const [patchRes, setPatchRes] = useState(null);
-  const [compRes, setCompRes]   = useState(null);
+  const [riskRes, setRiskRes]     = useState(null);
+  const [patchRes, setPatchRes]   = useState(null);
+  const [compRes, setCompRes]     = useState(null);
   const [checksRes, setChecksRes] = useState([]);
+  const [ticketMap, setTicketMap] = useState({}); // checkId -> ticket
+  const [tickets, setTickets]     = useState([]);
 
   const [err, setErr]         = useState("");
   const [loading, setLoading] = useState(true);
 
-  const [tab, setTab]               = useState("compliance");
-  const [cisQuery, setCisQuery]     = useState("");
-  const [cisPage, setCisPage]       = useState(1);
+  const [tab, setTab]                   = useState("compliance");
+  const [cisQuery, setCisQuery]         = useState("");
+  const [cisPage, setCisPage]           = useState(1);
   const [resultFilter, setResultFilter] = useState("all");
   const pageSize = 20;
-  const [selectedCheck, setSelectedCheck] = useState(null);
+
+  const [selectedCheck, setSelectedCheck]       = useState(null);
+  const [createTicketFor, setCreateTicketFor]   = useState(null);
+  const [viewTicket, setViewTicket]             = useState(null);
+
+  const loadTickets = useCallback(async () => {
+    try {
+      const [mapRes, listRes] = await Promise.all([
+        axios.get(`${API}/api/tickets/${encodeURIComponent(hostname)}/map`),
+        axios.get(`${API}/api/tickets/${encodeURIComponent(hostname)}`),
+      ]);
+      setTicketMap(mapRes.data?.data || {});
+      setTickets(listRes.data?.data || []);
+    } catch {}
+  }, [hostname]);
 
   useEffect(() => {
     (async () => {
@@ -89,9 +313,11 @@ export default function AssetDetails() {
     })();
   }, [hostname]);
 
-  const risk   = riskRes?.risk || { score: 0, priority: "Low", reasons: [] };
-  const patch  = patchRes?.data || null;
-  const comp   = compRes?.data || null;
+  useEffect(() => { loadTickets(); }, [loadTickets]);
+
+  const risk  = riskRes?.risk || { score: 0, priority: "Low", reasons: [] };
+  const patch = patchRes?.data || null;
+  const comp  = compRes?.data || null;
 
   const agentStatus   = comp?.raw?.agent?.status;
   const agentLastSeen = comp?.raw?.agent?.lastKeepAlive || comp?.raw?.agent?.dateAdd || null;
@@ -103,36 +329,27 @@ export default function AssetDetails() {
     return Array.isArray(patch.missing) ? patch.missing : [];
   }, [patch]);
 
-  // ── Live counts from checksRes (always up to date) ─────────────────────────
   const countAll    = checksRes.length;
-  const countFailed = checksRes.filter((x) => x.result === "failed").length;
-  const countPassed = checksRes.filter((x) => x.result === "passed").length;
-  const countNA     = checksRes.filter((x) => x.result === "not applicable").length;
+  const countFailed = checksRes.filter(x => x.result === "failed").length;
+  const countPassed = checksRes.filter(x => x.result === "passed").length;
+  const countNA     = checksRes.filter(x => x.result === "not applicable").length;
 
-  // Score = passed / (total - not_applicable) * 100
   const scaScore = (countAll - countNA) > 0
     ? Math.round((countPassed / (countAll - countNA)) * 100)
     : null;
-
-  // Always use live failed count from checksRes — never the stale Compliance doc
   const scaFailedCount = countFailed;
-
   const scaPolicy = comp?.raw?.summary?.policy || null;
 
   const filteredChecks = useMemo(() => {
     let list = checksRes;
-    if (resultFilter !== "all") {
-      list = list.filter((x) => (x.result || "").toLowerCase() === resultFilter);
-    }
+    if (resultFilter !== "all") list = list.filter(x => (x.result || "").toLowerCase() === resultFilter);
     const q = cisQuery.trim().toLowerCase();
-    if (q) {
-      list = list.filter((x) =>
-        String(x.checkId   || "").toLowerCase().includes(q) ||
-        String(x.title     || "").toLowerCase().includes(q) ||
-        String(x.rationale || "").toLowerCase().includes(q) ||
-        String(x.remediation || "").toLowerCase().includes(q)
-      );
-    }
+    if (q) list = list.filter(x =>
+      String(x.checkId || "").toLowerCase().includes(q) ||
+      String(x.title || "").toLowerCase().includes(q) ||
+      String(x.rationale || "").toLowerCase().includes(q) ||
+      String(x.remediation || "").toLowerCase().includes(q)
+    );
     return list;
   }, [checksRes, resultFilter, cisQuery]);
 
@@ -142,7 +359,6 @@ export default function AssetDetails() {
   }, [filteredChecks, cisPage]);
 
   const totalPages = Math.max(1, Math.ceil(filteredChecks.length / pageSize));
-
   useEffect(() => { setCisPage(1); }, [cisQuery, resultFilter]);
 
   const recommendedPlan = useMemo(() => {
@@ -155,18 +371,22 @@ export default function AssetDetails() {
       plan.push("Patch in next regular maintenance cycle.");
     }
     if ((patch?.missingCount ?? 0) > 0) {
-      plan.push(`Review ${patch.missingCount} pending updates/packages and prioritize security updates first.`);
+      plan.push(`Review ${patch.missingCount} pending updates and prioritize security updates first.`);
     } else {
-      plan.push("No missing patch items reported by collectors (verify collectors ran recently).");
+      plan.push("No missing patch items reported — verify collectors ran recently.");
     }
     if (scaFailedCount > 0) {
-      plan.push(`Address ${scaFailedCount} CIS/SCA compliance failures before next audit review.`);
+      plan.push(`Address ${scaFailedCount} CIS compliance failures — create tickets for failed checks to track remediation.`);
     } else {
-      plan.push("Compliance shows no failures or no SCA data collected yet.");
+      plan.push("Compliance shows no failures.");
     }
-    plan.push("Re-run collectors and validate risk score decreases.");
+    plan.push("Re-run collectors and validate risk score decreases after remediation.");
     return plan;
   }, [risk.priority, patch?.missingCount, scaFailedCount]);
+
+  const openTickets     = tickets.filter(t => t.status === "open").length;
+  const inProgressCount = tickets.filter(t => t.status === "in-progress").length;
+  const resolvedCount   = tickets.filter(t => t.status === "resolved").length;
 
   const headerRight = (
     <span className={statusBadge(agentStatus)}>
@@ -177,29 +397,92 @@ export default function AssetDetails() {
 
   return (
     <Layout title={`Asset: ${hostname}`} rightControls={headerRight}>
+
+      {/* Create ticket modal */}
+      <Modal open={!!createTicketFor} onClose={() => setCreateTicketFor(null)}>
+        {createTicketFor && (
+          <CreateTicketModal
+            check={createTicketFor}
+            hostname={hostname}
+            onCreated={loadTickets}
+            onClose={() => setCreateTicketFor(null)}
+          />
+        )}
+      </Modal>
+
+      {/* View/edit ticket modal */}
+      <Modal open={!!viewTicket} onClose={() => setViewTicket(null)}>
+        {viewTicket && (
+          <TicketDetailModal
+            ticket={viewTicket}
+            onUpdated={loadTickets}
+            onDeleted={loadTickets}
+            onClose={() => setViewTicket(null)}
+          />
+        )}
+      </Modal>
+
+      {/* Check detail modal */}
+      <Modal open={!!selectedCheck} onClose={() => setSelectedCheck(null)}>
+        {selectedCheck && (
+          <div style={{ padding: 4 }}>
+            <div className="modalHeader">
+              <div className="title" style={{ fontSize: 20 }}>Check {selectedCheck.checkId}</div>
+              <button className="btn" style={{ background: "transparent", border: "1px solid var(--line)", color: "var(--muted)" }} onClick={() => setSelectedCheck(null)}>Close</button>
+            </div>
+            <div style={{ marginTop: 12, display: "grid", gap: 20 }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>{selectedCheck.title}</div>
+                <span className={resultBadge(selectedCheck.result)}>{selectedCheck.result}</span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+                <div>
+                  <div className="cardLabel">Description</div>
+                  <div style={{ fontSize: 14, lineHeight: 1.6 }}>{selectedCheck.description || "No description provided."}</div>
+                </div>
+                <div>
+                  <div className="cardLabel">Rationale</div>
+                  <div style={{ fontSize: 14, lineHeight: 1.6 }}>{selectedCheck.rationale || "No rationale provided."}</div>
+                </div>
+              </div>
+              <div>
+                <div className="cardLabel">Remediation</div>
+                <div style={{ padding: 24, background: "var(--accent-muted)", borderRadius: "var(--radius-md)", border: "1px solid var(--accent-border)", lineHeight: 1.6, color: "#fff", fontWeight: 600, boxShadow: "0 4px 12px rgba(0,0,0,0.2)" }}>
+                  {selectedCheck.remediation || "No remediation steps provided."}
+                </div>
+              </div>
+              {Array.isArray(selectedCheck.command) && selectedCheck.command.length > 0 && (
+                <div>
+                  <div className="cardLabel">Verification Command</div>
+                  <pre>{selectedCheck.command.join("\n")}</pre>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
       {loading && <div className="muted">Loading...</div>}
       {err && <div style={{ color: "crimson" }}>{err}</div>}
 
       {!loading && !err && (
         <>
+          {/* Asset header */}
           <div className="card" style={{ marginBottom: 20 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
               <div>
-                <div style={{ fontSize: "22px", fontWeight: 900, letterSpacing: "-0.5px" }}>{hostname}</div>
-                <div className="muted" style={{ marginTop: 6, fontSize: "14px" }}>
+                <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: "-0.5px" }}>{hostname}</div>
+                <div className="muted" style={{ marginTop: 6, fontSize: 14 }}>
                   <span style={{ color: "var(--accent)" }}>{osName}</span>
                   &nbsp;•&nbsp; IP: {ipAddr}
                   &nbsp;•&nbsp; Last collection: {agentLastSeen ? new Date(agentLastSeen).toLocaleString() : "-"}
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span className={badge(risk.priority)}>
-                  {risk.priority || "Low"} — Score {risk.score ?? 0}
-                </span>
-              </div>
+              <span className={badge(risk.priority)}>{risk.priority || "Low"} — Score {risk.score ?? 0}</span>
             </div>
           </div>
 
+          {/* KPIs */}
           <div className="kpis">
             <div className="card">
               <div className="cardLabel">Risk Score</div>
@@ -207,262 +490,293 @@ export default function AssetDetails() {
             </div>
             <div className="card">
               <div className="cardLabel">Priority</div>
-              <div className="cardValue">
-                <span className={badge(risk.priority)}>{risk.priority || "Low"}</span>
-              </div>
+              <div className="cardValue"><span className={badge(risk.priority)}>{risk.priority || "Low"}</span></div>
             </div>
             <div className="card">
-              <div className="cardLabel">Missing updates</div>
+              <div className="cardLabel">Missing Updates</div>
               <div className="cardValue">{patch?.missingCount ?? "-"}</div>
             </div>
             <div className="card">
-              <div className="cardLabel">CIS score</div>
+              <div className="cardLabel">CIS Score</div>
               <div className="cardValue">{scaScore ?? "-"}</div>
             </div>
             <div className="card">
-              <div className="cardLabel">CIS failed</div>
-              <div className="cardValue" style={{ color: scaFailedCount > 0 ? "hsl(350, 100%, 65%)" : "inherit" }}>
-                {scaFailedCount}
-              </div>
+              <div className="cardLabel">CIS Failed</div>
+              <div className="cardValue" style={{ color: scaFailedCount > 0 ? "hsl(350,100%,65%)" : "inherit" }}>{scaFailedCount}</div>
+            </div>
+            <div className="card">
+              <div className="cardLabel">Open Tickets</div>
+              <div className="cardValue" style={{ color: openTickets > 0 ? "hsl(350,100%,65%)" : "inherit" }}>{openTickets}</div>
             </div>
           </div>
 
+          {/* Tabs */}
           <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
             <TabButton active={tab === "compliance"} onClick={() => setTab("compliance")}>Compliance (CIS)</TabButton>
+            <TabButton active={tab === "tickets"}    onClick={() => setTab("tickets")}>
+              Tickets {tickets.length > 0 ? `(${tickets.length})` : ""}
+            </TabButton>
             <TabButton active={tab === "patch"}      onClick={() => setTab("patch")}>Patch Backlog</TabButton>
             <TabButton active={tab === "risk"}       onClick={() => setTab("risk")}>Risk Intelligence</TabButton>
             <TabButton active={tab === "plan"}       onClick={() => setTab("plan")}>Remediation Plan</TabButton>
           </div>
 
-          <div className="tabContent">
-            {tab === "compliance" && (
-              <div className="card">
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
-                  <div>
-                    <div style={{ fontWeight: 800, fontSize: 16 }}>CIS / SCA Compliance Details</div>
-                    <div className="muted" style={{ marginTop: 6, fontSize: "13px" }}>
-                      Policy: <span style={{ color: "var(--text)" }}>
-                        {scaPolicy?.name || comp?.raw?.sca?.data?.affected_items?.[0]?.name || "-"}
-                      </span>
-                    </div>
+          {/* ── Compliance Tab ── */}
+          {tab === "compliance" && (
+            <div className="card">
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 16 }}>CIS / SCA Compliance Details</div>
+                  <div className="muted" style={{ marginTop: 6, fontSize: 13 }}>
+                    Policy: <span style={{ color: "var(--text)" }}>
+                      {scaPolicy?.name || comp?.raw?.sca?.data?.affected_items?.[0]?.name || "-"}
+                    </span>
                   </div>
-                  <input
-                    className="input"
-                    placeholder="Search check ID, title, or remediation..."
-                    value={cisQuery}
-                    onChange={(e) => setCisQuery(e.target.value)}
-                    style={{ minWidth: 350 }}
-                  />
                 </div>
+                <input className="input" placeholder="Search check ID, title, or remediation..."
+                  value={cisQuery} onChange={e => setCisQuery(e.target.value)} style={{ minWidth: 320 }} />
+              </div>
 
-                <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
-                  {[
-                    { key: "all",             label: `All Checks (${countAll})`  },
-                    { key: "failed",          label: `Failed (${countFailed})`   },
-                    { key: "passed",          label: `Passed (${countPassed})`   },
-                    { key: "not applicable",  label: `N/A (${countNA})`          },
-                  ].map((f) => (
-                    <button
-                      key={f.key}
-                      className={`btn-tab ${resultFilter === f.key ? "active" : ""}`}
-                      onClick={() => setResultFilter(f.key)}
-                      style={{ fontSize: "12px", padding: "6px 14px" }}
-                    >
-                      {f.label}
-                    </button>
-                  ))}
-                </div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+                {[
+                  { key: "all",            label: `All (${countAll})`      },
+                  { key: "failed",         label: `Failed (${countFailed})` },
+                  { key: "passed",         label: `Passed (${countPassed})` },
+                  { key: "not applicable", label: `N/A (${countNA})`        },
+                ].map(f => (
+                  <button key={f.key} className={`btn-tab ${resultFilter === f.key ? "active" : ""}`}
+                    onClick={() => setResultFilter(f.key)} style={{ fontSize: 12, padding: "6px 14px" }}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
 
-                <div className="tableWrap">
-                  {checksRes.length === 0 ? (
-                    <div className="muted" style={{ padding: 20 }}>No compliance data collected for this asset.</div>
-                  ) : filteredChecks.length === 0 ? (
-                    <div className="muted" style={{ padding: 20 }}>No checks match your current filter.</div>
-                  ) : (
-                    <>
-                      <table>
-                        <thead>
-                          <tr>
-                            <th style={{ width: 100 }}>ID</th>
-                            <th>Title</th>
-                            <th style={{ width: 140 }}>Result</th>
-                            <th style={{ width: 100, textAlign: "center" }}>Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {pagedChecks.map((c) => (
+              <div className="tableWrap">
+                {checksRes.length === 0 ? (
+                  <div className="muted" style={{ padding: 20 }}>No compliance data collected for this asset.</div>
+                ) : filteredChecks.length === 0 ? (
+                  <div className="muted" style={{ padding: 20 }}>No checks match your filter.</div>
+                ) : (
+                  <>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th style={{ width: 90 }}>ID</th>
+                          <th>Title</th>
+                          <th style={{ width: 130 }}>Result</th>
+                          <th style={{ width: 120 }}>Ticket</th>
+                          <th style={{ width: 160, textAlign: "center" }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pagedChecks.map(c => {
+                          const ticket = ticketMap[c.checkId];
+                          return (
                             <tr key={c.checkId}>
                               <td className="mono" style={{ color: "var(--accent)" }}>{c.checkId}</td>
                               <td style={{ fontWeight: 500 }}>{c.title}</td>
                               <td><span className={resultBadge(c.result)}>{c.result}</span></td>
+                              <td>
+                                {ticket ? (
+                                  <button
+                                    onClick={() => setViewTicket(ticket)}
+                                    style={{
+                                      fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4,
+                                      background: `${ticketStatusColor(ticket.status)}18`,
+                                      color: ticketStatusColor(ticket.status),
+                                      border: `1px solid ${ticketStatusColor(ticket.status)}44`,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    {ticketStatusLabel(ticket.status)}
+                                  </button>
+                                ) : (
+                                  c.result === "failed" ? (
+                                    <span style={{ fontSize: 11, color: "var(--muted)" }}>—</span>
+                                  ) : null
+                                )}
+                              </td>
                               <td style={{ textAlign: "center" }}>
-                                <button className="btn" style={{ padding: "6px 12px", fontSize: "12px" }} onClick={() => setSelectedCheck(c)}>
-                                  View
-                                </button>
+                                <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+                                  <button className="btn" style={{ padding: "5px 10px", fontSize: 11 }}
+                                    onClick={() => setSelectedCheck(c)}>View</button>
+                                  {c.result === "failed" && !ticket && (
+                                    <button
+                                      onClick={() => setCreateTicketFor(c)}
+                                      style={{
+                                        padding: "5px 10px", fontSize: 11, borderRadius: 6,
+                                        background: "hsla(210,100%,60%,0.12)",
+                                        border: "1px solid hsla(210,100%,60%,0.3)",
+                                        color: "hsl(210,100%,60%)", cursor: "pointer", fontWeight: 600,
+                                      }}
+                                    >+ Ticket</button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderTop: "1px solid var(--line)" }}>
-                        <button className="btn" onClick={() => setCisPage((p) => Math.max(1, p - 1))} disabled={cisPage <= 1}>
-                          Previous
-                        </button>
-                        <div className="muted" style={{ fontSize: "13px" }}>Page {cisPage} of {totalPages}</div>
-                        <button className="btn" onClick={() => setCisPage((p) => Math.min(totalPages, p + 1))} disabled={cisPage >= totalPages}>
-                          Next
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {tab === "patch" && (
-              <div className="card">
-                <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 12 }}>Patch Backlog</div>
-                {patchList.length === 0 ? (
-                  <div className="muted">No missing updates reported.</div>
-                ) : (
-                  <div className="tableWrap">
-                    <table>
-                      <thead>
-                        <tr><th>Missing Package / Update Name</th></tr>
-                      </thead>
-                      <tbody>
-                        {patchList.map((p, i) => (
-                          <tr key={i}>
-                            <td className="mono" style={{ fontSize: "13px" }}>{p}</td>
-                          </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
-                  </div>
+
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderTop: "1px solid var(--line)" }}>
+                      <button className="btn" onClick={() => setCisPage(p => Math.max(1, p - 1))} disabled={cisPage <= 1}>Previous</button>
+                      <div className="muted" style={{ fontSize: 13 }}>Page {cisPage} of {totalPages}</div>
+                      <button className="btn" onClick={() => setCisPage(p => Math.min(totalPages, p + 1))} disabled={cisPage >= totalPages}>Next</button>
+                    </div>
+                  </>
                 )}
               </div>
-            )}
+            </div>
+          )}
 
-            {tab === "risk" && (
-              <div className="card">
-                <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 16 }}>Risk Intelligence Explanation</div>
-
-                {/* Exploit warning banner */}
-                {risk?.breakdown?.hasExploits && (
-                  <div style={{
-                    padding: "12px 18px", borderRadius: 8, marginBottom: 20,
-                    background: "hsla(350,100%,65%,0.1)", border: "1px solid hsla(350,100%,65%,0.4)",
-                    display: "flex", alignItems: "flex-start", gap: 12,
-                  }}>
-                    <div style={{ fontSize: 20 }}>🔥</div>
-                    <div>
-                      <div style={{ fontWeight: 800, fontSize: 14, color: "hsl(350,100%,65%)" }}>
-                        Active Exploit Alert — {risk.breakdown.exploitCount} CVE{risk.breakdown.exploitCount > 1 ? "s" : ""} have public exploit code
-                      </div>
-                      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-                        Known exploit code exists for vulnerabilities on this asset. Risk score boosted by 25%. Patch immediately.
-                      </div>
-                      {risk.breakdown.exploitCVEIds?.length > 0 && (
-                        <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          {risk.breakdown.exploitCVEIds.map(id => (
-                            <span key={id} style={{
-                              fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4,
-                              background: "hsla(350,100%,65%,0.15)", color: "hsl(350,100%,65%)",
-                              border: "1px solid hsla(350,100%,65%,0.3)",
-                            }}>{id}</span>
-                          ))}
-                        </div>
-                      )}
+          {/* ── Tickets Tab ── */}
+          {tab === "tickets" && (
+            <div className="card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                <div style={{ fontWeight: 800, fontSize: 16 }}>Remediation Tickets</div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  {[
+                    { label: `Open`, value: openTickets, color: "hsl(350,100%,65%)" },
+                    { label: `In Progress`, value: inProgressCount, color: "hsl(45,100%,50%)" },
+                    { label: `Resolved`, value: resolvedCount, color: "hsl(130,60%,50%)" },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} style={{ fontSize: 12, fontWeight: 700, padding: "4px 12px", borderRadius: 6, background: `${color}12`, color, border: `1px solid ${color}33` }}>
+                      {value} {label}
                     </div>
-                  </div>
-                )}
-
-                <div className="tableWrap" style={{ padding: 24 }}>
-                  {Array.isArray(risk.reasons) && risk.reasons.length > 0 ? (
-                    <div style={{ display: "grid", gap: 12 }}>
-                      {risk.reasons.map((x, i) => (
-                        <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                          <div style={{ width: 8, height: 8, borderRadius: "50%", background: x.includes("EXPLOIT") ? "hsl(350,100%,65%)" : "var(--accent)", marginTop: 6 }}></div>
-                          <div style={{ fontSize: "15px", lineHeight: "1.6", color: x.includes("EXPLOIT") ? "hsl(350,100%,65%)" : "inherit" }}>{x}</div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="muted">No specific risk factors identified.</div>
-                  )}
+                  ))}
                 </div>
               </div>
-            )}
 
-            {tab === "plan" && (
-              <div className="card">
-                <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 16 }}>Recommended Action Plan</div>
-                <div className="tableWrap" style={{ padding: 24 }}>
-                  <div style={{ display: "grid", gap: 16 }}>
-                    {recommendedPlan.map((x, i) => (
-                      <div key={i} style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-                        <div style={{
-                          width: 24, height: 24, borderRadius: "50%",
-                          background: "var(--accent-muted)", color: "var(--accent)",
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: "12px", fontWeight: 800, flexShrink: 0
-                        }}>
-                          {i + 1}
-                        </div>
-                        <div style={{ fontSize: "15px", lineHeight: "1.6" }}>{x}</div>
+              {tickets.length === 0 ? (
+                <div style={{ padding: "40px 20px", textAlign: "center" }}>
+                  <div style={{ fontSize: 32, marginBottom: 12 }}>🎫</div>
+                  <div style={{ fontWeight: 700, marginBottom: 8 }}>No tickets yet</div>
+                  <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                    Go to the Compliance tab, filter by Failed, and click "+ Ticket" on any failed check to start tracking remediation.
+                  </div>
+                </div>
+              ) : (
+                <div className="tableWrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th style={{ width: 90 }}>Check</th>
+                        <th>Title</th>
+                        <th style={{ width: 110 }}>Priority</th>
+                        <th style={{ width: 120 }}>Status</th>
+                        <th style={{ width: 110 }}>Assigned</th>
+                        <th style={{ width: 110 }}>Created</th>
+                        <th style={{ width: 80, textAlign: "center" }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tickets.map(t => (
+                        <tr key={t._id}>
+                          <td className="mono" style={{ color: "var(--accent)", fontSize: 12 }}>{t.checkId}</td>
+                          <td style={{ fontSize: 13, fontWeight: 500 }}>{t.title}</td>
+                          <td><span className={badge(t.priority)}>{t.priority}</span></td>
+                          <td>
+                            <span style={{
+                              fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4,
+                              background: `${ticketStatusColor(t.status)}18`,
+                              color: ticketStatusColor(t.status),
+                              border: `1px solid ${ticketStatusColor(t.status)}44`,
+                            }}>{ticketStatusLabel(t.status)}</span>
+                          </td>
+                          <td style={{ fontSize: 12 }}>{t.assignedTo || "—"}</td>
+                          <td style={{ fontSize: 12, color: "var(--muted)" }}>{new Date(t.createdAt).toLocaleDateString()}</td>
+                          <td style={{ textAlign: "center" }}>
+                            <button className="btn" style={{ padding: "5px 10px", fontSize: 11 }}
+                              onClick={() => setViewTicket(t)}>Edit</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Patch Tab ── */}
+          {tab === "patch" && (
+            <div className="card">
+              <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 12 }}>Patch Backlog</div>
+              {patchList.length === 0 ? (
+                <div className="muted">No missing updates reported.</div>
+              ) : (
+                <div className="tableWrap">
+                  <table>
+                    <thead><tr><th>Missing Package / Update</th></tr></thead>
+                    <tbody>
+                      {patchList.map((p, i) => (
+                        <tr key={i}><td className="mono" style={{ fontSize: 13 }}>{p}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Risk Tab ── */}
+          {tab === "risk" && (
+            <div className="card">
+              <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 16 }}>Risk Intelligence Explanation</div>
+              {risk?.breakdown?.hasExploits && (
+                <div style={{ padding: "12px 18px", borderRadius: 8, marginBottom: 20, background: "hsla(350,100%,65%,0.1)", border: "1px solid hsla(350,100%,65%,0.4)", display: "flex", alignItems: "flex-start", gap: 12 }}>
+                  <div style={{ fontSize: 20 }}>🔥</div>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: 14, color: "hsl(350,100%,65%)" }}>
+                      Active Exploit Alert — {risk.breakdown.exploitCount} CVE{risk.breakdown.exploitCount > 1 ? "s" : ""} have public exploit code
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Known exploit code exists. Risk score boosted 25%. Patch immediately.</div>
+                    {risk.breakdown.exploitCVEIds?.length > 0 && (
+                      <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {risk.breakdown.exploitCVEIds.map(id => (
+                          <span key={id} style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: "hsla(350,100%,65%,0.15)", color: "hsl(350,100%,65%)", border: "1px solid hsla(350,100%,65%,0.3)" }}>{id}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              <div className="tableWrap" style={{ padding: 24 }}>
+                {Array.isArray(risk.reasons) && risk.reasons.length > 0 ? (
+                  <div style={{ display: "grid", gap: 12 }}>
+                    {risk.reasons.map((x, i) => (
+                      <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: x.includes("EXPLOIT") ? "hsl(350,100%,65%)" : "var(--accent)", marginTop: 6 }} />
+                        <div style={{ fontSize: 15, lineHeight: 1.6, color: x.includes("EXPLOIT") ? "hsl(350,100%,65%)" : "inherit" }}>{x}</div>
                       </div>
                     ))}
                   </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <Modal
-            open={!!selectedCheck}
-            title={selectedCheck ? `Check ${selectedCheck.checkId}` : ""}
-            onClose={() => setSelectedCheck(null)}
-          >
-            {selectedCheck && (
-              <div style={{ display: "grid", gap: 20 }}>
-                <div>
-                  <div style={{ fontSize: "18px", fontWeight: 800, marginBottom: 8 }}>{selectedCheck.title}</div>
-                  <span className={resultBadge(selectedCheck.result)}>{selectedCheck.result}</span>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
-                  <div>
-                    <div className="cardLabel">Description</div>
-                    <div style={{ fontSize: "14px", lineHeight: "1.6", color: "var(--text)" }}>
-                      {selectedCheck.description || "No description provided."}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="cardLabel">Rationale</div>
-                    <div style={{ fontSize: "14px", lineHeight: "1.6", color: "var(--text)" }}>
-                      {selectedCheck.rationale || "No rationale provided."}
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <div className="cardLabel">Remediation</div>
-                  <div style={{
-                    padding: 24, background: "var(--accent-muted)", borderRadius: "var(--radius-md)",
-                    border: "1px solid var(--accent-border)", lineHeight: "1.6",
-                    color: "#fff", fontWeight: 600, boxShadow: "0 4px 12px rgba(0,0,0,0.2)"
-                  }}>
-                    {selectedCheck.remediation || "No remediation steps provided."}
-                  </div>
-                </div>
-                {Array.isArray(selectedCheck.command) && selectedCheck.command.length > 0 && (
-                  <div>
-                    <div className="cardLabel">Verification Command</div>
-                    <pre>{selectedCheck.command.join("\n")}</pre>
-                  </div>
+                ) : (
+                  <div className="muted">No specific risk factors identified.</div>
                 )}
               </div>
-            )}
-          </Modal>
+            </div>
+          )}
+
+          {/* ── Plan Tab ── */}
+          {tab === "plan" && (
+            <div className="card">
+              <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 16 }}>Recommended Action Plan</div>
+              <div className="tableWrap" style={{ padding: 24 }}>
+                <div style={{ display: "grid", gap: 16 }}>
+                  {recommendedPlan.map((x, i) => (
+                    <div key={i} style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+                      <div style={{ width: 24, height: 24, borderRadius: "50%", background: "var(--accent-muted)", color: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
+                        {i + 1}
+                      </div>
+                      <div style={{ fontSize: 15, lineHeight: 1.6 }}>{x}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
     </Layout>
