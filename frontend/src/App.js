@@ -12,6 +12,7 @@ import Evaluation   from "./pages/Evaluation";
 import Users        from "./pages/Users";
 import NetworkMap   from "./pages/NetworkMap";
 import AssetGroups  from "./pages/AssetGroups";
+import Tickets from "./pages/Tickets";
 
 export default function App() {
   return (
@@ -43,6 +44,9 @@ export default function App() {
           } />
           <Route path="/compliance" element={
             <ProtectedRoute roles={["admin", "analyst", "auditor"]}><Compliance /></ProtectedRoute>
+          } />
+          <Route path="/tickets" element={
+            <ProtectedRoute roles={["admin", "analyst", "auditor"]}><Tickets /></ProtectedRoute>
           } />
           <Route path="/users" element={
             <ProtectedRoute roles={["admin"]}><Users /></ProtectedRoute>
