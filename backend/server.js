@@ -28,6 +28,7 @@ app.use("/api/agents",        requireAuth, require("./routes/agents"));
 app.use("/api/notifications", requireAuth, require("./routes/notifications"));
 app.use("/api/snapshots",     requireAuth, require("./routes/snapshots"));
 app.use("/api/groups",        requireAuth, require("./routes/groups"));
+app.use("/api/tickets",       requireAuth, require("./routes/tickets"));
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
