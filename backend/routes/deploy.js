@@ -1,12 +1,12 @@
-const router   = require("express").Router();
+const router = require("express").Router();
 const { NodeSSH } = require("node-ssh");
 
 // SSH config for each Linux asset
 const SSH_CONFIG = {
   kali: {
-    host:       "10.10.10.63",
-    port:       22,
-    username:   "stager",
+    host: "10.10.10.63",
+    port: 22,
+    username: "stager",
     privateKeyPath: "/home/patch/.ssh/patch_key",
   },
 };
@@ -17,12 +17,19 @@ router.post("/patch", async (req, res) => {
   const { hostname, package: pkg } = req.body;
 
   if (!hostname || !pkg) {
-    return res.status(400).json({ ok: false, error: "hostname and package required" });
+    return res
+      .status(400)
+      .json({ ok: false, error: "hostname and package required" });
   }
 
   const config = SSH_CONFIG[hostname.toLowerCase()];
   if (!config) {
-    return res.status(400).json({ ok: false, error: `No SSH config for ${hostname}. Windows patching not yet supported.` });
+    return res
+      .status(400)
+      .json({
+        ok: false,
+        error: `No SSH config for ${hostname}. Windows patching not yet supported.`,
+      });
   }
 
   const ssh = new NodeSSH();
@@ -33,7 +40,7 @@ router.post("/patch", async (req, res) => {
     // Run apt-get upgrade for the specific package
     const result = await ssh.execCommand(
       `echo 'password' | sudo -S apt-get install --only-upgrade -y ${pkg} 2>&1`,
-      { timeout: 120000 }
+      { timeout: 120000 },
     );
 
     ssh.dispose();
@@ -43,11 +50,12 @@ router.post("/patch", async (req, res) => {
 
     // Trigger the patch collector to update MongoDB
     try {
-      const { execSync } = require("child_process");
-      execSync(
-        "node /opt/risk-patch-system/patch-system/backend/collectors_wazuh_indexer_sca.js",
-        { timeout: 30000, cwd: "/opt/risk-patch-system/patch-system/backend" }
+      const ssh2 = new NodeSSH();
+      await ssh2.connect(config);
+      await ssh2.execCommand(
+        "sudo systemctl restart riskpatch-linux-collector.service",
       );
+      ssh2.dispose();
     } catch {}
 
     res.json({
@@ -59,7 +67,6 @@ router.post("/patch", async (req, res) => {
         ? `Package ${pkg} upgraded successfully on ${hostname}`
         : `Upgrade may have failed — check output`,
     });
-
   } catch (e) {
     ssh.dispose();
     res.status(500).json({ ok: false, error: e.message });
@@ -70,7 +77,11 @@ router.post("/patch", async (req, res) => {
 router.get("/status/:hostname", async (req, res) => {
   const config = SSH_CONFIG[req.params.hostname.toLowerCase()];
   if (!config) {
-    return res.json({ ok: true, reachable: false, reason: "No SSH config for this host" });
+    return res.json({
+      ok: true,
+      reachable: false,
+      reason: "No SSH config for this host",
+    });
   }
 
   const ssh = new NodeSSH();
