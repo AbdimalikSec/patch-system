@@ -108,8 +108,8 @@ function NotificationBell({ loginAt }) {
         <div style={{
           position: "absolute", top: 44, right: 0,
           width: 360, maxHeight: 480,
-          background: "var(--panel)", border: "1px solid var(--line)",
-          borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+          background: "#1a1d27", border: "1px solid var(--line)",
+          borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.8)",
           zIndex: 9999, overflow: "hidden",
           display: "flex", flexDirection: "column",
         }}>
@@ -205,13 +205,13 @@ export default function Layout({ title, rightControls, children }) {
 
   return (
     <div className="layout">
-      <aside className="sidebar">
+      <aside className="sidebar"  style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
         <div className="brand">
           <div className="brandName">RiskPatch</div>
           <div className="brandSub">Security Intelligence</div>
         </div>
 
-        <div className="nav">
+        <div className="nav" style={{ overflowY: "auto", flex: 1, minHeight: 0 }}>
           {role === "auditor" ? (
             <NavItem to="/compliance" label="Compliance" icon={ICONS.compliance} />
           ) : (

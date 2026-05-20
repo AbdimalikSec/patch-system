@@ -115,10 +115,6 @@ export default function Login() {
             </button>
           </form>
         </div>
-
-        <div style={{ textAlign: "center", marginTop: 20, fontSize: 12, color: "var(--muted)" }}>
-          RiskPatch — Final Year Project · Secure Access Only
-        </div>
       </div>
     </div>
   );
