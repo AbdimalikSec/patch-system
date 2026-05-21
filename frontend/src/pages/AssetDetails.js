@@ -143,7 +143,14 @@ export default function AssetDetails() {
 
   const agentStatus = comp?.raw?.agent?.status;
   const agentLastSeen =
-    comp?.raw?.agent?.lastKeepAlive || comp?.raw?.agent?.dateAdd || null;
+    comp?.raw?.agent?.lastKeepAlive ||
+    comp?.raw?.agent?.dateAdd ||
+    (checksRes.length > 0
+      ? checksRes.reduce(
+          (latest, c) => (c.collectedAt > latest ? c.collectedAt : latest),
+          checksRes[0].collectedAt,
+        )
+      : null);
   const osName = comp?.raw?.agent?.os?.name || patch?.os || "-";
   const ipAddr = comp?.raw?.agent?.ip || patch?.raw?.ip || "-";
 
