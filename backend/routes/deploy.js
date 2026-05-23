@@ -23,7 +23,7 @@ const WINRM_CONFIG = {
     host:     "10.10.10.60",
     port:     5985,
     username: "hqSaacid",
-    password: "15422035s$",
+    password: "passwordS$",
   },
 };
 
