@@ -32,13 +32,34 @@ function rankPriority(p) {
 }
 
 // ── Patch Now Button ──────────────────────────────────────────────────────────
-function PatchNowButton({ hostname, pkg, onPatched }) {
-  const [state, setState] = useState("idle"); // idle | patching | done | error
+function PatchNowButton({ hostname, pkg, os, onPatched }) {
+  const [state, setState]   = useState("idle");
   const [output, setOutput] = useState("");
 
+  const isWindows = (os || "").toLowerCase() === "windows";
+  const isLinux   = (os || "").toLowerCase() === "linux";
+
+  // Only show for supported assets
+  if (!isLinux && !isWindows) return null;
+
+  // Windows needs a KB number
+  if (isWindows && !pkg.match(/KB\d+/i)) {
+    return (
+      <span style={{ fontSize: 10, color: "var(--muted)", fontStyle: "italic" }}>
+        No KB
+      </span>
+    );
+  }
+
   async function handlePatch() {
-    if (!window.confirm(`Patch ${pkg} on ${hostname}?\n\nThis will run: apt-get install --only-upgrade ${pkg}`)) return;
+    const confirmMsg = isWindows
+      ? `Install ${pkg} on ${hostname} via WinRM?\n\nThis sends the install command to Windows Update.`
+      : `Patch ${pkg} on ${hostname}?\n\nThis runs: apt-get install --only-upgrade ${pkg.split("/")[0]}`;
+
+    if (!window.confirm(confirmMsg)) return;
     setState("patching");
+    setOutput("");
+
     try {
       const res = await axios.post(`${API}/api/deploy/patch`, { hostname, package: pkg });
       if (res.data?.ok) {
@@ -70,7 +91,11 @@ function PatchNowButton({ hostname, pkg, onPatched }) {
   if (state === "error") return (
     <div>
       <span style={{ fontSize: 10, color: "hsl(350,100%,65%)", fontWeight: 700 }}>✕ Failed</span>
-      {output && <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2, maxWidth: 200, wordBreak: "break-word" }}>{output.slice(0, 100)}</div>}
+      {output && (
+        <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2, maxWidth: 200, wordBreak: "break-word" }}>
+          {output.slice(0, 120)}
+        </div>
+      )}
     </div>
   );
 
@@ -79,8 +104,10 @@ function PatchNowButton({ hostname, pkg, onPatched }) {
       onClick={handlePatch}
       style={{
         padding: "3px 10px", borderRadius: 5, fontSize: 11, cursor: "pointer",
-        background: "hsla(130,60%,50%,0.12)", border: "1px solid hsla(130,60%,50%,0.4)",
-        color: "hsl(130,60%,50%)", fontWeight: 700, whiteSpace: "nowrap",
+        background: isWindows ? "hsla(210,100%,60%,0.12)" : "hsla(130,60%,50%,0.12)",
+        border: isWindows ? "1px solid hsla(210,100%,60%,0.4)" : "1px solid hsla(130,60%,50%,0.4)",
+        color: isWindows ? "hsl(210,100%,60%)" : "hsl(130,60%,50%)",
+        fontWeight: 700, whiteSpace: "nowrap",
       }}
     >
       ▶ Patch Now
@@ -188,12 +215,9 @@ export default function Backlog() {
     }
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
     const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href = url; a.download = "patch_backlog.csv"; a.click();
+    const a    = document.createElement("a"); a.href = url; a.download = "patch_backlog.csv"; a.click();
     URL.revokeObjectURL(url);
   }
-
-  const isLinux = (os) => (os || "").toLowerCase() === "linux";
 
   return (
     <Layout
@@ -229,11 +253,12 @@ export default function Backlog() {
         return (
           <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
             {[
-              { key: "breached", label: "SLA Breached",    value: breached,  color: "hsl(350,100%,65%)" },
-              { key: "due_soon", label: "Due Within 24h",  value: dueSoon,   color: "hsl(25,100%,60%)"  },
-              { key: "ok",       label: "Within SLA",      value: compliant, color: "hsl(130,60%,50%)"  },
+              { key: "breached", label: "SLA Breached",   value: breached,  color: "hsl(350,100%,65%)" },
+              { key: "due_soon", label: "Due Within 24h", value: dueSoon,   color: "hsl(25,100%,60%)"  },
+              { key: "ok",       label: "Within SLA",     value: compliant, color: "hsl(130,60%,50%)"  },
             ].map(({ key, label, value, color }) => (
-              <div key={key} className="card" style={{ flex: 1, minWidth: 130, padding: "14px 18px", cursor: "pointer", border: slaFilter === key ? `1px solid ${color}` : undefined }}
+              <div key={key} className="card"
+                style={{ flex: 1, minWidth: 130, padding: "14px 18px", cursor: "pointer", border: slaFilter === key ? `1px solid ${color}` : undefined }}
                 onClick={() => setSlaFilter(f => f === key ? "All" : key)}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>{label}</div>
                 <div style={{ fontSize: 28, fontWeight: 900, color: value > 0 ? color : "inherit" }}>{value}</div>
@@ -273,7 +298,8 @@ export default function Backlog() {
               const isOpen  = expanded.has(g.hostname);
               const preview = g.missingList.slice(0, 3).join(", ");
               const more    = g.missingCount > 3 ? ` (+${g.missingCount - 3} more)` : "";
-              const linux   = isLinux(g.os);
+              const isWin   = (g.os || "").toLowerCase() === "windows";
+              const isLin   = (g.os || "").toLowerCase() === "linux";
 
               return (
                 <>
@@ -308,17 +334,15 @@ export default function Backlog() {
                       <td colSpan={7}>
                         <div style={{ padding: "12px 0" }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                            <div className="muted" style={{ fontSize: 13 }}>
-                              Missing items ({g.missingCount})
-                            </div>
-                            {linux && g.missingCount > 0 && (
+                            <div className="muted" style={{ fontSize: 13 }}>Missing items ({g.missingCount})</div>
+                            {isLin && g.missingCount > 0 && (
                               <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                                ▶ Click <strong style={{ color: "hsl(130,60%,50%)" }}>Patch Now</strong> on any package to install it directly on {g.hostname}
+                                ▶ <strong style={{ color: "hsl(130,60%,50%)" }}>Patch Now</strong> installs the package directly on {g.hostname} via SSH
                               </div>
                             )}
-                            {!linux && g.missingCount > 0 && (
-                              <div style={{ fontSize: 11, color: "var(--muted)", fontStyle: "italic" }}>
-                                Windows: apply via Windows Update or WSUS
+                            {isWin && g.missingCount > 0 && (
+                              <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                                ▶ <strong style={{ color: "hsl(210,100%,60%)" }}>Patch Now</strong> sends KB install command via WinRM
                               </div>
                             )}
                           </div>
@@ -326,7 +350,7 @@ export default function Backlog() {
                           {g.missingCount === 0 ? (
                             <div className="muted">No missing patches.</div>
                           ) : (
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 8 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 8 }}>
                               {g.missingList.map(item => (
                                 <div key={`${g.hostname}-${item}`} style={{
                                   border: "1px solid var(--line)", borderRadius: 8,
@@ -336,13 +360,12 @@ export default function Backlog() {
                                   <div style={{ fontSize: 12, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
                                     {item}
                                   </div>
-                                  {linux && (
-                                    <PatchNowButton
-                                      hostname={g.hostname}
-                                      pkg={item}
-                                      onPatched={load}
-                                    />
-                                  )}
+                                  <PatchNowButton
+                                    hostname={g.hostname}
+                                    pkg={item}
+                                    os={g.os}
+                                    onPatched={load}
+                                  />
                                 </div>
                               ))}
                             </div>
