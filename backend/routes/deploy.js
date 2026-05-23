@@ -1,6 +1,6 @@
-const router     = require("express").Router();
+const router      = require("express").Router();
 const { NodeSSH } = require("node-ssh");
-const http       = require("http");
+const { execSync } = require("child_process");
 
 // ── Asset configs ─────────────────────────────────────────────────────────────
 const SSH_CONFIG = {
@@ -15,121 +15,91 @@ const SSH_CONFIG = {
 const WINRM_CONFIG = {
   dc1: {
     host:     "10.10.20.10",
-    port:     5985,
     username: "Administrator",
     password: "15422035s$",
   },
   "hq-staff-01": {
     host:     "10.10.10.60",
-    port:     5985,
     username: "hqSaacid",
     password: "passwordS$",
   },
 };
 
-// ── WinRM helper ──────────────────────────────────────────────────────────────
-function runWinRM(config, command) {
-  return new Promise((resolve, reject) => {
-    const soap = `<?xml version="1.0" encoding="UTF-8"?>
-<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
-            xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
-            xmlns:wsman="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd"
-            xmlns:rsp="http://schemas.microsoft.com/wbem/wsman/1/windows/shell">
-  <s:Header>
-    <wsa:To>http://${config.host}:${config.port}/wsman</wsa:To>
-    <wsa:ReplyTo><wsa:Address s:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:Address></wsa:ReplyTo>
-    <wsman:ResourceURI s:mustUnderstand="true">http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd</wsman:ResourceURI>
-    <wsa:Action s:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2004/09/transfer/Create</wsa:Action>
-    <wsa:MessageID>uuid:1</wsa:MessageID>
-    <wsman:OperationTimeout>PT120.000S</wsman:OperationTimeout>
-  </s:Header>
-  <s:Body>
-    <rsp:Shell><rsp:InputStreams>stdin</rsp:InputStreams><rsp:OutputStreams>stdout stderr</rsp:OutputStreams></rsp:Shell>
-  </s:Body>
-</s:Envelope>`;
+// ── Run PowerShell via pywinrm ────────────────────────────────────────────────
+function runPowerShell(config, psCommand) {
+  // Escape single quotes in the PS command for Python string
+  const escaped = psCommand.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/\n/g, "\\n");
 
-    const auth = Buffer.from(`${config.username}:${config.password}`).toString("base64");
+  const pythonScript = `
+import winrm, sys
+try:
+    s = winrm.Session('${config.host}', auth=('${config.username}', '${config.password}'), transport='basic')
+    r = s.run_ps('${escaped}')
+    print(r.std_out.decode('utf-8', errors='replace'))
+    if r.std_err:
+        print('STDERR:', r.std_err.decode('utf-8', errors='replace'), file=sys.stderr)
+    sys.exit(r.status_code)
+except Exception as e:
+    print(f'ERROR: {e}', file=sys.stderr)
+    sys.exit(1)
+`;
 
-    const options = {
-      hostname: config.host,
-      port:     config.port,
-      path:     "/wsman",
-      method:   "POST",
-      headers:  {
-        "Content-Type":   "application/soap+xml;charset=UTF-8",
-        "Authorization":  `Basic ${auth}`,
-        "Content-Length": Buffer.byteLength(soap),
-      },
-    };
-
-    const req = http.request(options, (res) => {
-      let data = "";
-      res.on("data", chunk => data += chunk);
-      res.on("end", () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve({ success: true, output: data, code: res.statusCode });
-        } else {
-          resolve({ success: false, output: data, code: res.statusCode });
-        }
-      });
+  try {
+    const output = execSync(`python3 -c "${pythonScript.replace(/"/g, '\\"')}"`, {
+      timeout: 120000,
+      encoding: "utf8",
     });
-
-    req.on("error", reject);
-    req.setTimeout(130000, () => { req.destroy(); reject(new Error("WinRM timeout")); });
-    req.write(soap);
-    req.end();
-  });
+    return { success: true, output };
+  } catch (e) {
+    return {
+      success: false,
+      output: (e.stdout || "") + (e.stderr || "") || e.message,
+    };
+  }
 }
 
-// Simpler WinRM using PowerShell via direct exec
-function runPowerShell(config, psCommand) {
-  return new Promise((resolve, reject) => {
-    const encodedCmd = Buffer.from(psCommand, "utf16le").toString("base64");
-    const soap = `<?xml version="1.0" encoding="UTF-8"?>
-<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
-            xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
-            xmlns:wsman="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd"
-            xmlns:p="http://schemas.microsoft.com/wbem/wsman/1/wsman.xsd">
-  <s:Header>
-    <wsa:Action>http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command</wsa:Action>
-    <wsa:To>http://${config.host}:${config.port}/wsman</wsa:To>
-    <wsman:ResourceURI>http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd</wsman:ResourceURI>
-    <wsa:MessageID>uuid:2</wsa:MessageID>
-    <wsa:ReplyTo><wsa:Address>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:Address></wsa:ReplyTo>
-    <wsman:OperationTimeout>PT120S</wsman:OperationTimeout>
-  </s:Header>
-  <s:Body>
-    <rsp:CommandLine xmlns:rsp="http://schemas.microsoft.com/wbem/wsman/1/windows/shell">
-      <rsp:Command>powershell.exe -NonInteractive -EncodedCommand ${encodedCmd}</rsp:Command>
-    </rsp:CommandLine>
-  </s:Body>
-</s:Envelope>`;
+// ── Better approach: write to temp file ──────────────────────────────────────
+function runPowerShellViaTempFile(config, psCommand) {
+  const fs   = require("fs");
+  const path = require("path");
+  const os   = require("os");
 
-    const auth = Buffer.from(`${config.username}:${config.password}`).toString("base64");
+  const scriptFile = path.join(os.tmpdir(), `winrm_${Date.now()}.py`);
 
-    const options = {
-      hostname: config.host,
-      port:     config.port,
-      path:     "/wsman",
-      method:   "POST",
-      headers:  {
-        "Content-Type":   "application/soap+xml;charset=UTF-8",
-        "Authorization":  `Basic ${auth}`,
-        "Content-Length": Buffer.byteLength(soap),
-      },
-    };
+  const pythonScript = `import winrm, sys
+config_host = ${JSON.stringify(config.host)}
+config_user = ${JSON.stringify(config.username)}
+config_pass = ${JSON.stringify(config.password)}
+ps_command  = ${JSON.stringify(psCommand)}
+try:
+    s = winrm.Session(config_host, auth=(config_user, config_pass), transport='basic')
+    r = s.run_ps(ps_command)
+    out = r.std_out.decode('utf-8', errors='replace')
+    err = r.std_err.decode('utf-8', errors='replace')
+    print(out)
+    if err and err.strip():
+        print('STDERR:', err)
+    sys.exit(r.status_code)
+except Exception as e:
+    print(f'ERROR: {e}', file=sys.stderr)
+    sys.exit(1)
+`;
 
-    const req = http.request(options, (res) => {
-      let data = "";
-      res.on("data", chunk => data += chunk);
-      res.on("end", () => resolve({ success: res.statusCode < 400, output: data, code: res.statusCode }));
+  fs.writeFileSync(scriptFile, pythonScript);
+  try {
+    const output = execSync(`python3 ${scriptFile}`, {
+      timeout: 120000,
+      encoding: "utf8",
     });
-
-    req.on("error", reject);
-    req.setTimeout(130000, () => { req.destroy(); reject(new Error("WinRM timeout")); });
-    req.write(soap);
-    req.end();
-  });
+    fs.unlinkSync(scriptFile);
+    return { success: true, output };
+  } catch (e) {
+    try { fs.unlinkSync(scriptFile); } catch {}
+    return {
+      success: false,
+      output: (e.stdout || "") + (e.stderr || "") || e.message,
+    };
+  }
 }
 
 // ── POST /api/deploy/patch ────────────────────────────────────────────────────
@@ -146,10 +116,10 @@ router.post("/patch", async (req, res) => {
   if (SSH_CONFIG[hostKey]) {
     const config = SSH_CONFIG[hostKey];
     const ssh    = new NodeSSH();
+
     try {
       await ssh.connect(config);
 
-      // Extract just the package name without version/repo suffix
       const pkgName = pkg.split("/")[0].trim();
 
       const result = await ssh.execCommand(
@@ -157,7 +127,7 @@ router.post("/patch", async (req, res) => {
         { timeout: 120000 }
       );
 
-      // Trigger kali's patch collector to update MongoDB count
+      // Trigger kali collector to update count
       try {
         await ssh.execCommand(
           "sudo systemctl restart riskpatch-linux-collector.service 2>/dev/null || true",
@@ -168,10 +138,12 @@ router.post("/patch", async (req, res) => {
       ssh.dispose();
 
       const output  = (result.stdout + result.stderr).slice(0, 1000);
-      const success = result.code === 0 || output.includes("already the newest") || output.includes("upgraded");
+      const success = result.code === 0 ||
+                      output.includes("already the newest") ||
+                      output.includes("upgraded");
 
       return res.json({
-        ok: success,
+        ok:      success,
         hostname,
         package: pkgName,
         output,
@@ -181,50 +153,47 @@ router.post("/patch", async (req, res) => {
       });
 
     } catch (e) {
-      ssh.dispose();
+      try { ssh.dispose(); } catch {}
       return res.status(500).json({ ok: false, error: e.message });
     }
   }
 
-  // ── Windows (DC1, HQ-staff-01) via WinRM ─────────────────────────────────
+  // ── Windows (DC1, HQ-staff-01) via pywinrm ───────────────────────────────
   if (WINRM_CONFIG[hostKey]) {
     const config = WINRM_CONFIG[hostKey];
 
-    // KB number extraction — pkg will be something like "KB5075899"
     const kbMatch = pkg.match(/KB\d+/i);
     if (!kbMatch) {
       return res.status(400).json({
-        ok: false,
-        error: `Cannot extract KB number from "${pkg}". Windows patches require a KB number.`,
+        ok:    false,
+        error: `Cannot extract KB number from "${pkg}". Windows patches require a KB number like KB5075899.`,
       });
     }
     const kb = kbMatch[0].toUpperCase();
 
     const psCommand = `
-Import-Module PSWindowsUpdate -ErrorAction SilentlyContinue
-$result = Get-WindowsUpdate -KBArticleID "${kb}" -ErrorAction SilentlyContinue
-if ($result) {
-  Install-WindowsUpdate -KBArticleID "${kb}" -AcceptAll -IgnoreReboot -ErrorAction SilentlyContinue
-  Write-Output "Installed ${kb}"
+$ErrorActionPreference = 'SilentlyContinue'
+Import-Module PSWindowsUpdate
+$updates = Get-WindowsUpdate -KBArticleID '${kb}'
+if ($updates) {
+    Install-WindowsUpdate -KBArticleID '${kb}' -AcceptAll -IgnoreReboot
+    Write-Output "SUCCESS: ${kb} installation initiated"
 } else {
-  Write-Output "${kb} not found in pending updates or already installed"
+    Write-Output "INFO: ${kb} not found in pending updates (may already be installed)"
 }
 `;
 
-    try {
-      const result = await runPowerShell(config, psCommand);
-      return res.json({
-        ok: result.success,
-        hostname,
-        package: kb,
-        output: result.output.slice(0, 500),
-        message: result.success
-          ? `${kb} install command sent to ${hostname}`
-          : `WinRM responded with status ${result.code}`,
-      });
-    } catch (e) {
-      return res.status(500).json({ ok: false, error: `WinRM error: ${e.message}` });
-    }
+    const result = runPowerShellViaTempFile(config, psCommand);
+
+    return res.json({
+      ok:      result.success,
+      hostname,
+      package: kb,
+      output:  result.output.slice(0, 800),
+      message: result.success
+        ? `${kb} command sent to ${hostname} via WinRM`
+        : `WinRM command failed on ${hostname}`,
+    });
   }
 
   return res.status(400).json({ ok: false, error: `No patch config found for ${hostname}` });
@@ -246,12 +215,14 @@ router.get("/status/:hostname", async (req, res) => {
   }
 
   if (WINRM_CONFIG[hostKey]) {
-    try {
-      const result = await runWinRM(WINRM_CONFIG[hostKey], "whoami");
-      return res.json({ ok: true, reachable: result.code < 500, method: "winrm", code: result.code });
-    } catch (e) {
-      return res.json({ ok: true, reachable: false, method: "winrm", reason: e.message });
-    }
+    const config = WINRM_CONFIG[hostKey];
+    const result = runPowerShellViaTempFile(config, "Write-Output ping");
+    return res.json({
+      ok:       true,
+      reachable: result.success,
+      method:   "winrm",
+      reason:   result.success ? null : result.output,
+    });
   }
 
   return res.json({ ok: true, reachable: false, reason: "No config for this host" });
