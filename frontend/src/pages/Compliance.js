@@ -12,7 +12,7 @@ function ScoreGauge({ score }) {
     const t = setTimeout(() => setAnimated(score), 150);
     return () => clearTimeout(t);
   }, [score]);
-  const color = score >= 70 ? "hsl(130,60%,50%)" : score >= 40 ? "hsl(45,100%,50%)" : "hsl(350,100%,65%)";
+  const color = score <= 30 ? "hsl(130,60%,50%)" : score <= 60 ? "hsl(45,100%,50%)" : "hsl(350,100%,65%)";
   const r = 15.9, circ = 2 * Math.PI * r, dash = (animated / 100) * circ;
   return (
     <div style={{ position: "relative", width: 72, height: 72 }}>
@@ -54,7 +54,7 @@ function AssetCard({ row, checks, loadingChecks, isAuditor }) {
   const failedCount = failedArr.length;
   const naCount     = checksArr.filter(c => c.result === "not applicable").length;
   const denom       = checksArr.length - naCount;
-  const score       = denom > 0 ? Math.round((passedCount / denom) * 100) : (row.score ?? 0);
+  const score = denom > 0 ? Math.round((failedCount / denom) * 100) : (row.score ?? 0);
   const status      = checksArr.length === 0 ? "No Data" : failedCount > 0 ? "Non-Compliant" : "Compliant";
   const displayed   = showAll ? failedArr : failedArr.slice(0, 5);
 
@@ -72,7 +72,7 @@ function AssetCard({ row, checks, loadingChecks, isAuditor }) {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div style={{ flex: 1, height: 6, background: "var(--line)", borderRadius: 3, overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${score}%`, background: score >= 70 ? "hsl(130,60%,50%)" : score >= 40 ? "hsl(45,100%,50%)" : "hsl(350,100%,65%)", borderRadius: 3, transition: "width 1s ease" }} />
+              <div style={{ height: "100%", width: `${score}%`, background: score <= 30 ? "hsl(130,60%,50%)" : score <= 60 ? "hsl(45,100%,50%)" : "hsl(350,100%,65%)", borderRadius: 3, transition: "width 1s ease" }} />
             </div>
             <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>{failedCount} failed · {passedCount} passed · {checksArr.length} total</div>
           </div>
