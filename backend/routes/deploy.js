@@ -1,25 +1,25 @@
-const router      = require("express").Router();
+const router = require("express").Router();
 const { NodeSSH } = require("node-ssh");
 const { execSync } = require("child_process");
 
 // ── Asset configs ─────────────────────────────────────────────────────────────
 const SSH_CONFIG = {
   kali: {
-    host:           "10.10.10.63",
-    port:           22,
-    username:       "stager",
+    host: "10.10.10.63",
+    port: 22,
+    username: "stager",
     privateKeyPath: "/home/patch/.ssh/patch_key",
   },
 };
 
 const WINRM_CONFIG = {
   dc1: {
-    host:     "10.10.20.10",
+    host: "10.10.20.10",
     username: "Administrator",
     password: "15422035s$",
   },
   "hq-staff-01": {
-    host:     "10.10.10.60",
+    host: "10.10.10.60",
     username: "hqSaacid",
     password: "passwordS$",
   },
@@ -28,7 +28,10 @@ const WINRM_CONFIG = {
 // ── Run PowerShell via pywinrm ────────────────────────────────────────────────
 function runPowerShell(config, psCommand) {
   // Escape single quotes in the PS command for Python string
-  const escaped = psCommand.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/\n/g, "\\n");
+  const escaped = psCommand
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, "\\n");
 
   const pythonScript = `
 import winrm, sys
@@ -45,10 +48,13 @@ except Exception as e:
 `;
 
   try {
-    const output = execSync(`python3 -c "${pythonScript.replace(/"/g, '\\"')}"`, {
-      timeout: 250000,
-      encoding: "utf8",
-    });
+    const output = execSync(
+      `python3 -c "${pythonScript.replace(/"/g, '\\"')}"`,
+      {
+        timeout: 250000,
+        encoding: "utf8",
+      },
+    );
     return { success: true, output };
   } catch (e) {
     return {
@@ -60,9 +66,9 @@ except Exception as e:
 
 // ── Better approach: write to temp file ──────────────────────────────────────
 function runPowerShellViaTempFile(config, psCommand) {
-  const fs   = require("fs");
+  const fs = require("fs");
   const path = require("path");
-  const os   = require("os");
+  const os = require("os");
 
   const scriptFile = path.join(os.tmpdir(), `winrm_${Date.now()}.py`);
 
@@ -87,14 +93,18 @@ except Exception as e:
 
   fs.writeFileSync(scriptFile, pythonScript);
   try {
-    const output = execSync(`python3 ${scriptFile}`, {
-      timeout: 120000,
+    const { spawnSync } = require("child_process");
+    const result = spawnSync("python3", [scriptFile], {
+      timeout: 180000,
       encoding: "utf8",
+      maxBuffer: 1024 * 1024,
     });
     fs.unlinkSync(scriptFile);
     return { success: true, output };
   } catch (e) {
-    try { fs.unlinkSync(scriptFile); } catch {}
+    try {
+      fs.unlinkSync(scriptFile);
+    } catch {}
     return {
       success: false,
       output: (e.stdout || "") + (e.stderr || "") || e.message,
@@ -107,7 +117,9 @@ router.post("/patch", async (req, res) => {
   const { hostname, package: pkg } = req.body;
 
   if (!hostname || !pkg) {
-    return res.status(400).json({ ok: false, error: "hostname and package required" });
+    return res
+      .status(400)
+      .json({ ok: false, error: "hostname and package required" });
   }
 
   const hostKey = hostname.toLowerCase();
@@ -115,7 +127,7 @@ router.post("/patch", async (req, res) => {
   // ── Linux (kali) via SSH ──────────────────────────────────────────────────
   if (SSH_CONFIG[hostKey]) {
     const config = SSH_CONFIG[hostKey];
-    const ssh    = new NodeSSH();
+    const ssh = new NodeSSH();
 
     try {
       await ssh.connect(config);
@@ -124,26 +136,27 @@ router.post("/patch", async (req, res) => {
 
       const result = await ssh.execCommand(
         `echo 'password' | sudo -S DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y ${pkgName} 2>&1`,
-        { timeout: 120000 }
+        { timeout: 120000 },
       );
 
       // Trigger kali collector to update count
       try {
         await ssh.execCommand(
           "sudo systemctl restart riskpatch-linux-collector.service 2>/dev/null || true",
-          { timeout: 15000 }
+          { timeout: 15000 },
         );
       } catch {}
 
       ssh.dispose();
 
-      const output  = (result.stdout + result.stderr).slice(0, 1000);
-      const success = result.code === 0 ||
-                      output.includes("already the newest") ||
-                      output.includes("upgraded");
+      const output = (result.stdout + result.stderr).slice(0, 1000);
+      const success =
+        result.code === 0 ||
+        output.includes("already the newest") ||
+        output.includes("upgraded");
 
       return res.json({
-        ok:      success,
+        ok: success,
         hostname,
         package: pkgName,
         output,
@@ -151,9 +164,10 @@ router.post("/patch", async (req, res) => {
           ? `${pkgName} patched on ${hostname}`
           : `Patch may have failed — check output`,
       });
-
     } catch (e) {
-      try { ssh.dispose(); } catch {}
+      try {
+        ssh.dispose();
+      } catch {}
       return res.status(500).json({ ok: false, error: e.message });
     }
   }
@@ -165,7 +179,7 @@ router.post("/patch", async (req, res) => {
     const kbMatch = pkg.match(/KB\d+/i);
     if (!kbMatch) {
       return res.status(400).json({
-        ok:    false,
+        ok: false,
         error: `Cannot extract KB number from "${pkg}". Windows patches require a KB number like KB5075899.`,
       });
     }
@@ -186,17 +200,19 @@ if ($updates) {
     const result = runPowerShellViaTempFile(config, psCommand);
 
     return res.json({
-      ok:      result.success,
+      ok: result.success,
       hostname,
       package: kb,
-      output:  result.output.slice(0, 800),
+      output: result.output.slice(0, 800),
       message: result.success
         ? `${kb} command sent to ${hostname} via WinRM`
         : `WinRM command failed on ${hostname}`,
     });
   }
 
-  return res.status(400).json({ ok: false, error: `No patch config found for ${hostname}` });
+  return res
+    .status(400)
+    .json({ ok: false, error: `No patch config found for ${hostname}` });
 });
 
 // ── GET /api/deploy/status/:hostname ─────────────────────────────────────────
@@ -210,7 +226,12 @@ router.get("/status/:hostname", async (req, res) => {
       ssh.dispose();
       return res.json({ ok: true, reachable: true, method: "ssh" });
     } catch (e) {
-      return res.json({ ok: true, reachable: false, method: "ssh", reason: e.message });
+      return res.json({
+        ok: true,
+        reachable: false,
+        method: "ssh",
+        reason: e.message,
+      });
     }
   }
 
@@ -218,14 +239,18 @@ router.get("/status/:hostname", async (req, res) => {
     const config = WINRM_CONFIG[hostKey];
     const result = runPowerShellViaTempFile(config, "Write-Output ping");
     return res.json({
-      ok:       true,
+      ok: true,
       reachable: result.success,
-      method:   "winrm",
-      reason:   result.success ? null : result.output,
+      method: "winrm",
+      reason: result.success ? null : result.output,
     });
   }
 
-  return res.json({ ok: true, reachable: false, reason: "No config for this host" });
+  return res.json({
+    ok: true,
+    reachable: false,
+    reason: "No config for this host",
+  });
 });
 
 module.exports = router;
