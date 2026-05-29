@@ -187,7 +187,7 @@ router.post("/patch", async (req, res) => {
     const kb = kbMatch[0].toUpperCase();
 
     const psCommand = `
-$ErrorActionPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'Stop'
 Import-Module PSWindowsUpdate
 $updates = Get-WindowsUpdate -KBArticleID '${kb}'
 if ($updates) {
