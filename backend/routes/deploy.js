@@ -95,7 +95,7 @@ except Exception as e:
   try {
     const { spawnSync } = require("child_process");
     const result = spawnSync("python3", [scriptFile], {
-      timeout: 180000,
+      timeout: 600000,
       encoding: "utf8",
       maxBuffer: 1024 * 1024,
     });
@@ -186,15 +186,18 @@ router.post("/patch", async (req, res) => {
     }
     const kb = kbMatch[0].toUpperCase();
 
-    const psCommand = `
+const psCommand = `
 $ErrorActionPreference = 'Stop'
-Import-Module PSWindowsUpdate
-$updates = Get-WindowsUpdate -KBArticleID '${kb}'
-if ($updates) {
-    Install-WindowsUpdate -KBArticleID '${kb}' -AcceptAll -IgnoreReboot
-    Write-Output "SUCCESS: ${kb} installation initiated"
+$Session = New-Object -ComObject Microsoft.Update.Session
+$Searcher = $Session.CreateUpdateSearcher()
+$SearchResult = $Searcher.Search("IsInstalled=0 and KBArticleID='${kb}'")
+if ($SearchResult.Updates.Count -eq 0) {
+    Write-Output "INFO: ${kb} not found in pending updates"
 } else {
-    Write-Output "INFO: ${kb} not found in pending updates (may already be installed)"
+    $Installer = $Session.CreateUpdateInstaller()
+    $Installer.Updates = $SearchResult.Updates
+    $InstallResult = $Installer.Install()
+    Write-Output "SUCCESS: ${kb} install result code $($InstallResult.ResultCode)"
 }
 `;
 
