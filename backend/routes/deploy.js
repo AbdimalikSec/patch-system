@@ -186,16 +186,22 @@ router.post("/patch", async (req, res) => {
     }
     const kb = kbMatch[0].toUpperCase();
 
-const psCommand = `
+    const psCommand = `
 $ErrorActionPreference = 'Stop'
 $Session = New-Object -ComObject Microsoft.Update.Session
 $Searcher = $Session.CreateUpdateSearcher()
-$SearchResult = $Searcher.Search("IsInstalled=0 and KBArticleID='${kb}'")
-if ($SearchResult.Updates.Count -eq 0) {
+$SearchResult = $Searcher.Search("IsInstalled=0")
+$FilteredUpdates = New-Object -ComObject Microsoft.Update.UpdateColl
+foreach ($u in $SearchResult.Updates) {
+    if ($u.KBArticleIDs -contains '${kb.replace("KB", "")}') {
+        $FilteredUpdates.Add($u) | Out-Null
+    }
+}
+if ($FilteredUpdates.Count -eq 0) {
     Write-Output "INFO: ${kb} not found in pending updates"
 } else {
     $Installer = $Session.CreateUpdateInstaller()
-    $Installer.Updates = $SearchResult.Updates
+    $Installer.Updates = $FilteredUpdates
     $InstallResult = $Installer.Install()
     Write-Output "SUCCESS: ${kb} install result code $($InstallResult.ResultCode)"
 }
