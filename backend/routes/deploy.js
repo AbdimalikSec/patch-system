@@ -51,7 +51,7 @@ except Exception as e:
     const output = execSync(
       `python3 -c "${pythonScript.replace(/"/g, '\\"')}"`,
       {
-        timeout: 250000,
+        timeout: 600000,
         encoding: "utf8",
       },
     );
