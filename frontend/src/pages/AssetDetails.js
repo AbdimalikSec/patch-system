@@ -81,7 +81,7 @@ export default function AssetDetails() {
   const [ticketMap, setTicketMap] = useState({}); // checkId -> ticket
   const [tickets, setTickets] = useState([]);
   const navigate = useNavigate();
-
+  const [agentStatus, setAgentStatus] = useState(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -124,7 +124,14 @@ export default function AssetDetails() {
         setRiskRes(r.data);
         setPatchRes(p.data);
         setCompRes(c.data);
-        setChecksRes(ch.data?.data || []);
+         setChecksRes(ch.data?.data || []);
+        try {
+          const agentsRes = await axios.get(`${API}/api/agents`);
+          const found = (agentsRes.data?.data || []).find(
+            (a) => (a.name || "").toLowerCase() === hostname.toLowerCase()
+          );
+          setAgentStatus(found?.status || null);
+        } catch {}
       } catch (e) {
         setErr(e?.message || "Failed to load asset details");
       } finally {
@@ -141,16 +148,16 @@ export default function AssetDetails() {
   const patch = patchRes?.data || null;
   const comp = compRes?.data || null;
 
-  const agentStatus = comp?.raw?.agent?.status;
-  const agentLastSeen =
-    comp?.raw?.agent?.lastKeepAlive ||
-    comp?.raw?.agent?.dateAdd ||
-    (checksRes.length > 0
+
+
+const agentLastSeen =
+    checksRes.length > 0
       ? checksRes.reduce(
           (latest, c) => (c.collectedAt > latest ? c.collectedAt : latest),
           checksRes[0].collectedAt,
         )
-      : null);
+      : comp?.raw?.agent?.lastKeepAlive || comp?.raw?.agent?.dateAdd || null;
+
   const osName = comp?.raw?.agent?.os?.name || patch?.os || "-";
   const ipAddr = comp?.raw?.agent?.ip || patch?.raw?.ip || "-";
 

@@ -100,7 +100,8 @@ except Exception as e:
       maxBuffer: 1024 * 1024,
     });
     fs.unlinkSync(scriptFile);
-    return { success: true, output };
+    const out = (result.stdout || "") + (result.stderr || "");
+    return { success: result.status === 0, output: out };
   } catch (e) {
     try {
       fs.unlinkSync(scriptFile);
