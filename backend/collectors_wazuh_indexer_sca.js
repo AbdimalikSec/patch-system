@@ -12,25 +12,26 @@
 
 require("dotenv").config();
 
-const https   = require("https");
-const axios   = require("axios");
+const https = require("https");
+const axios = require("axios");
 const mongoose = require("mongoose");
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const INDEXER_URL = process.env.INDEXER_URL  || "https://10.10.20.20:9200";
+const INDEXER_URL = process.env.INDEXER_URL || "https://10.10.20.20:9200";
 const INDEXER_USER = process.env.INDEXER_USER || "admin";
 const INDEXER_PASS = process.env.INDEXER_PASS || "Index3rPass+2026";
-const MONGO_URI   = process.env.MONGO_URI     || "mongodb://127.0.0.1:27017/riskpatch";
-const INDEX       = "wazuh-alerts-4.x-*";
+const MONGO_URI =
+  process.env.MONGO_URI || "mongodb://127.0.0.1:27017/riskpatch";
+const INDEX = "wazuh-alerts-4.x-*";
 
 // Agent id → hostname mapping — keeps queries fast and avoids duplicate names.
 // Add every agent you have here. id is the Wazuh agent id (string, zero-padded).
 const AGENTS = [
-  { id: "000", hostname: "Wazuh"      },
-  { id: "001", hostname: "DC1"        },
-  { id: "002", hostname: "BR-staff"   },
-  { id: "004", hostname: "HQ-staff-01"},
-  { id: "005", hostname: "kali"       },
+  { id: "000", hostname: "Wazuh" },
+  { id: "001", hostname: "DC1" },
+  { id: "002", hostname: "BR-staff" },
+  { id: "004", hostname: "HQ-staff-01" },
+  { id: "005", hostname: "kali" },
 ];
 
 // ── Axios instance (skip TLS verification — lab environment) ──────────────────
@@ -54,8 +55,8 @@ async function fetchChecksForAgent(agentId) {
       bool: {
         must: [
           { match: { "agent.id": agentId } },
-          { term:  { "rule.groups": "sca" } },
-          { term:  { "data.sca.type": "check" } },
+          { term: { "rule.groups": "sca" } },
+          { term: { "data.sca.type": "check" } },
         ],
       },
     },
@@ -97,26 +98,26 @@ function deduplicate(docs) {
 
 // ── Normalise one OpenSearch document into a DB-ready object ─────────────────
 function normalise(doc, hostname, agentId) {
-  const sca   = doc._source.data.sca;
+  const sca = doc._source.data.sca;
   const check = sca.check;
 
   const resultRaw = (check.result || "").toLowerCase();
   let result = resultRaw;
-  if (resultRaw.includes("fail"))  result = "failed";
+  if (resultRaw.includes("fail")) result = "failed";
   else if (resultRaw.includes("pass")) result = "passed";
-  else if (resultRaw.includes("not"))  result = "not applicable";
+  else if (resultRaw.includes("not")) result = "not applicable";
 
   return {
     assetHostname: hostname,
     agentId,
-    policy:      sca.policy      || null,
-    checkId:     String(check.id || "unknown"),
-    title:       check.title      || "",
+    policy: sca.policy || null,
+    checkId: String(check.id || "unknown"),
+    title: check.title || "",
     result,
     description: check.description || "",
-    rationale:   check.rationale   || "",
+    rationale: check.rationale || "",
     remediation: check.remediation || "",
-    command:     Array.isArray(check.command) ? check.command : [],
+    command: Array.isArray(check.command) ? check.command : [],
     collectedAt: new Date(doc._source["@timestamp"] || Date.now()),
   };
 }
@@ -128,7 +129,7 @@ async function upsertChecks(hostname, agentId, normalisedChecks) {
     await ComplianceCheck.findOneAndUpdate(
       { assetHostname: c.assetHostname, checkId: c.checkId },
       c,
-      { upsert: true, new: true }
+      { upsert: true, new: true },
     );
     saved++;
   }
@@ -150,7 +151,9 @@ async function upsertChecks(hostname, agentId, normalisedChecks) {
       try {
         docs = await fetchChecksForAgent(agent.id);
       } catch (e) {
-        console.log(`[!] Failed to fetch from indexer for ${agent.hostname}: ${e.message}`);
+        console.log(
+          `[!] Failed to fetch from indexer for ${agent.hostname}: ${e.message}`,
+        );
         continue;
       }
 
@@ -164,19 +167,67 @@ async function upsertChecks(hostname, agentId, normalisedChecks) {
       const unique = deduplicate(docs);
       console.log(`    Unique checks (deduped): ${unique.length}`);
 
-      const normalised = unique.map((d) => normalise(d, agent.hostname, agent.id));
+      const normalised = unique.map((d) =>
+        normalise(d, agent.hostname, agent.id),
+      );
 
-      const failed  = normalised.filter((c) => c.result === "failed").length;
-      const passed  = normalised.filter((c) => c.result === "passed").length;
-      const notAppl = normalised.filter((c) => c.result === "not applicable").length;
+      const failed = normalised.filter((c) => c.result === "failed").length;
+      const passed = normalised.filter((c) => c.result === "passed").length;
+      const notAppl = normalised.filter(
+        (c) => c.result === "not applicable",
+      ).length;
 
-      console.log(`    failed=${failed}  passed=${passed}  not_applicable=${notAppl}`);
+      console.log(
+        `    failed=${failed}  passed=${passed}  not_applicable=${notAppl}`,
+      );
 
       const saved = await upsertChecks(agent.hostname, agent.id, normalised);
-      console.log(`[+] ${agent.hostname}: ${saved} checks upserted into MongoDB.`);
+      console.log(
+        `[+] ${agent.hostname}: ${saved} checks upserted into MongoDB.`,
+      );
     }
 
     console.log("\n[+] All agents processed. Done.");
+
+    // Auto-resolve tickets where the check is now passing
+    async function autoResolveTickets() {
+      try {
+        const Ticket = require("./models/Ticket");
+        //// ComplianceCheck is already loaded at module level
+      //  const ComplianceCheck = require("./models/ComplianceCheck");
+        const openTickets = await Ticket.find({
+          status: { $in: ["open", "in-progress"] },
+        });
+        let resolved = 0;
+        for (const ticket of openTickets) {
+          const check = await ComplianceCheck.findOne({
+            assetHostname: ticket.assetHostname,
+            checkId: ticket.checkId,
+            result: "passed",
+          });
+          if (check) {
+            await Ticket.findByIdAndUpdate(ticket._id, {
+              status: "resolved",
+              resolvedAt: new Date(),
+              notes:
+                (ticket.notes ? ticket.notes + " | " : "") +
+                "Auto-resolved: check now passing",
+            });
+            resolved++;
+            console.log(
+              `[ticket] Auto-resolved: ${ticket.assetHostname} check ${ticket.checkId}`,
+            );
+          }
+        }
+        if (resolved > 0)
+          console.log(`[ticket] ${resolved} ticket(s) auto-resolved`);
+      } catch (e) {
+        console.error("[ticket] Auto-resolve error:", e.message);
+      }
+    }
+
+    await autoResolveTickets();
+
     await mongoose.disconnect();
     process.exit(0);
   } catch (e) {
