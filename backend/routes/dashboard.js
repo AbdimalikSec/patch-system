@@ -32,8 +32,10 @@ router.get("/patches/backlog", async (req, res) => {
           missingItem: item,
           collectedAt: p.collectedAt,
           missingCount: p.missingCount ?? missing.length,
+          pendingRestart: p.pendingRestart || [],
         });
       }
+      
 
       if ((p.missingCount || 0) > 0 && missing.length === 0) {
         out.push({

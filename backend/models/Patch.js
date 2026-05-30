@@ -8,8 +8,9 @@ const PatchSchema = new mongoose.Schema(
     missingCount: { type: Number, default: 0 },
     missing: { type: Array, default: [] }, // list of missing updates/packages
     raw: { type: Object }, // full collector output
+    pendingRestart: { type: [String], default: [] }, // KBs queued, awaiting restart
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 module.exports = mongoose.model("Patch", PatchSchema);

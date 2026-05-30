@@ -103,10 +103,10 @@ except Exception as e:
     const out = (result.stdout || "").trim();
     const err = (result.stderr || "").trim();
     // CLIXML progress noise in stderr is normal for WinRM — not a real error
-    const realError = err && !err.includes("CLIXML") && !err.includes("progress");
+    const realError =
+      err && !err.includes("CLIXML") && !err.includes("progress");
     const success = result.status === 0 || (out.length > 0 && !realError);
     return { success, output: out || err };
-
   } catch (e) {
     try {
       fs.unlinkSync(scriptFile);
@@ -191,7 +191,7 @@ router.post("/patch", async (req, res) => {
     }
     const kb = kbMatch[0].toUpperCase();
 
-const psCommand = `
+    const psCommand = `
 $ErrorActionPreference = 'SilentlyContinue'
 $Session = New-Object -ComObject Microsoft.Update.Session
 $Searcher = $Session.CreateUpdateSearcher()
@@ -212,13 +212,23 @@ if (-not $found) {
 
     const result = runPowerShellViaTempFile(config, psCommand);
 
+    if (result.success && result.output.includes("FOUND:")) {
+      try {
+        const Patch = require("../models/Patch");
+        await Patch.findOneAndUpdate(
+          { assetHostname: hostname },
+          { $addToSet: { pendingRestart: kb } },
+        );
+      } catch {}
+    }
+
     return res.json({
       ok: result.success,
       hostname,
       package: kb,
       output: result.output.slice(0, 800),
       message: result.success
-        ? `${kb} command sent to ${hostname} via WinRM`
+        ? `${kb} queued on ${hostname} — restart to apply`
         : `WinRM command failed on ${hostname}`,
     });
   }
