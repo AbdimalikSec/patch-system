@@ -1,13 +1,15 @@
 const router = require("express").Router();
-const Asset  = require("../models/Asset");
-const Patch  = require("../models/Patch");
+const Asset = require("../models/Asset");
+const Patch = require("../models/Patch");
 
 // POST /api/ingest/asset
 router.post("/asset", async (req, res) => {
   try {
     const { hostname, os, ip, source, raw } = req.body;
     if (!hostname || !os) {
-      return res.status(400).json({ ok: false, error: "hostname and os are required" });
+      return res
+        .status(400)
+        .json({ ok: false, error: "hostname and os are required" });
     }
     const doc = await Asset.findOneAndUpdate(
       { hostname },
@@ -19,7 +21,7 @@ router.post("/asset", async (req, res) => {
         raw: raw || req.body,
         lastSeen: new Date(),
       },
-      { upsert: true, new: true }
+      { upsert: true, new: true },
     );
     return res.json({ ok: true, assetId: doc._id });
   } catch (err) {
@@ -33,19 +35,25 @@ router.post("/patch", async (req, res) => {
   try {
     const { assetHostname, os, missingCount, missing, raw } = req.body;
     if (!assetHostname || !os) {
-      return res.status(400).json({ ok: false, error: "assetHostname and os required" });
+      return res
+        .status(400)
+        .json({ ok: false, error: "assetHostname and os required" });
     }
+    const incomingMissing = missing || [];
     const doc = await Patch.findOneAndUpdate(
       { assetHostname },
       {
-        assetHostname,
-        os,
-        missingCount: missingCount ?? (Array.isArray(missing) ? missing.length : 0),
-        missing: missing || [],
-        raw: raw || req.body,
-        collectedAt: new Date(),
+        $set: {
+          assetHostname,
+          os,
+          missingCount: missingCount ?? incomingMissing.length,
+          missing: incomingMissing,
+          raw: raw || req.body,
+          collectedAt: new Date(),
+          pendingRestart: [],
+        },
       },
-      { upsert: true, new: true }
+      { upsert: true, new: true },
     );
     res.json({ ok: true, patchId: doc._id });
   } catch (e) {
