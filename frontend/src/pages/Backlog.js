@@ -53,7 +53,7 @@ function PatchNowButton({ hostname, pkg, os, onPatched }) {
 
   async function handlePatch() {
     const confirmMsg = isWindows
-      ? `Install ${pkg} on ${hostname} via WinRM?\n\nThis sends the install command to Windows Update.`
+      ? `Verify ${pkg} on ${hostname}?\n\nThis confirms the update is pending. Restart DC1 during maintenance window to apply.`
       : `Patch ${pkg} on ${hostname}?\n\nThis runs: apt-get install --only-upgrade ${pkg.split("/")[0]}`;
 
     if (!window.confirm(confirmMsg)) return;
@@ -342,7 +342,7 @@ export default function Backlog() {
                             )}
                             {isWin && g.missingCount > 0 && (
                               <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                                ▶ <strong style={{ color: "hsl(210,100%,60%)" }}>Patch Now</strong> sends KB install command via WinRM
+                                <strong style={{ color: "hsl(210,100%,60%)" }}>Verify & Queue</strong> confirms KB is pending via WinRM — restart DC1 to apply
                               </div>
                             )}
                           </div>

@@ -186,24 +186,22 @@ router.post("/patch", async (req, res) => {
     }
     const kb = kbMatch[0].toUpperCase();
 
-    const psCommand = `
-$ErrorActionPreference = 'Stop'
+const psCommand = `
+$ErrorActionPreference = 'SilentlyContinue'
 $Session = New-Object -ComObject Microsoft.Update.Session
 $Searcher = $Session.CreateUpdateSearcher()
 $SearchResult = $Searcher.Search("IsInstalled=0")
-$FilteredUpdates = New-Object -ComObject Microsoft.Update.UpdateColl
+$found = $false
 foreach ($u in $SearchResult.Updates) {
     if ($u.KBArticleIDs -contains '${kb.replace("KB", "")}') {
-        $FilteredUpdates.Add($u) | Out-Null
+        $found = $true
+        Write-Output "FOUND: ${kb} - $($u.Title)"
     }
 }
-if ($FilteredUpdates.Count -eq 0) {
-    Write-Output "INFO: ${kb} not found in pending updates"
+if (-not $found) {
+    Write-Output "INFO: ${kb} not found in pending updates - may already be installed"
 } else {
-    $Installer = $Session.CreateUpdateInstaller()
-    $Installer.Updates = $FilteredUpdates
-    $InstallResult = $Installer.Install()
-    Write-Output "SUCCESS: ${kb} install result code $($InstallResult.ResultCode)"
+    Write-Output "QUEUED: ${kb} is pending - restart DC1 to apply. Use Windows Update to install interactively."
 }
 `;
 
