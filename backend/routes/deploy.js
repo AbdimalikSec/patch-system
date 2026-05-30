@@ -100,8 +100,13 @@ except Exception as e:
       maxBuffer: 1024 * 1024,
     });
     fs.unlinkSync(scriptFile);
-    const out = (result.stdout || "") + (result.stderr || "");
-    return { success: result.status === 0, output: out };
+    const out = (result.stdout || "").trim();
+    const err = (result.stderr || "").trim();
+    // CLIXML progress noise in stderr is normal for WinRM — not a real error
+    const realError = err && !err.includes("CLIXML") && !err.includes("progress");
+    const success = result.status === 0 || (out.length > 0 && !realError);
+    return { success, output: out || err };
+
   } catch (e) {
     try {
       fs.unlinkSync(scriptFile);
