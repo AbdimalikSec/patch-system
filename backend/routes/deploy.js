@@ -140,8 +140,8 @@ router.post("/patch", async (req, res) => {
 
       const pkgName = pkg.split("/")[0].trim();
 
-      const result = await ssh.execCommand(
-        `echo 'password' | sudo -S DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y ${pkgName} 2>&1`,
+         const result = await ssh.execCommand(
+        `echo 'password' | sudo -S DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=60 install --only-upgrade -y ${pkgName} 2>&1`,
         { timeout: 120000 },
       );
 

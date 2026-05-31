@@ -87,6 +87,7 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued  }) {
     if (!window.confirm(confirmMsg)) return;
     setState("patching");
     setOutput("");
+    await new Promise(r => setTimeout(r, 400));
 
     try {
       const res = await axios.post(`${API}/api/deploy/patch`, {
