@@ -158,9 +158,16 @@ router.post("/patch", async (req, res) => {
         });
       }
 
+        const AgentCommand = require("../models/AgentCommand");
+      const cmd = await AgentCommand.create({
+        hostname,
+        kb: pkgName,
+        status: "running",
+      });
+
       const result = await ssh.execCommand(
         `echo 'password' | sudo -S DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=60 install --only-upgrade -y ${pkgName} 2>&1`,
-        { timeout: 300000  },
+        { timeout: 300000 },
       );
 
       // Trigger kali collector to update count
@@ -179,10 +186,17 @@ router.post("/patch", async (req, res) => {
         output.includes("already the newest") ||
         output.includes("upgraded");
 
+      await AgentCommand.findByIdAndUpdate(cmd._id, {
+        status: success ? "success" : "failed",
+        output: output.slice(0, 500),
+        completedAt: new Date(),
+      });
+
       return res.json({
         ok: success,
         hostname,
         package: pkgName,
+        commandId: cmd._id.toString(),
         output,
         message: success
           ? `${pkgName} patched on ${hostname}`

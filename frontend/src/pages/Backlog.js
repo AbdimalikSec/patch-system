@@ -50,9 +50,15 @@ function rankPriority(p) {
 }
 
 // ── Patch Now Button ──────────────────────────────────────────────────────────
-function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued  }) {
-  const [state, setState] = useState("idle");
-  const [output, setOutput] = useState("");
+function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued, activeCommand }) {
+  const [state, setState] = useState(() => {
+    if (activeCommand?.status === "running") return "patching";
+    if (activeCommand?.status === "success") return "done";
+    if (activeCommand?.status === "failed") return "error";
+    return "idle";
+  });
+  const [output, setOutput] = useState(activeCommand?.output || "");
+ 
 
   const isWindows = (os || "").toLowerCase() === "windows";
   const isLinux = (os || "").toLowerCase() === "linux";
@@ -97,7 +103,7 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued  }) {
 
       if (res.data?.ok) {
         setOutput(res.data.output || "");
-        if (!isWindows) {
+          if (!isWindows) {
           setState("done");
           setTimeout(() => { setState("idle"); onPatched(); }, 5000);
         } else {
@@ -278,7 +284,7 @@ export default function Backlog() {
           score: null,
           priority: "Low",
         };
-        map.set(hostname, {
+       map.set(hostname, {
           hostname,
           os,
           latestCollectedAt: collectedAt,
@@ -286,6 +292,7 @@ export default function Backlog() {
           riskPriority: risk.priority,
           riskScore: risk.score,
           pendingRestart: r.pendingRestart || [],
+          activeCommands: {},
         });
       }
 
@@ -299,6 +306,10 @@ export default function Backlog() {
         if (nxt > cur) g.latestCollectedAt = collectedAt;
       }
       if (missingItem) g.missingItems.add(missingItem);
+      if (r.activeCommand) {
+        const pkgName = missingItem.split("/")[0].trim();
+        g.activeCommands[pkgName] = r.activeCommand;
+      }
     }
 
     return Array.from(map.values())
@@ -692,6 +703,7 @@ export default function Backlog() {
                                     os={g.os}
                                     onPatched={load}
                                     alreadyQueued={(g.pendingRestart || []).includes(item)}
+                                    activeCommand={g.activeCommands[item.split("/")[0].trim()]}
                                   />
                                 </div>
                               ))}

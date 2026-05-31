@@ -48,6 +48,35 @@ router.get("/patches/backlog", async (req, res) => {
       }
     }
 
+     // Attach active/recent commands so frontend can show persistent patch state
+    const AgentCommand = require("../models/AgentCommand");
+    const recentCutoff = new Date(Date.now() - 10 * 60 * 1000); // last 10 min
+    const activeCommands = await AgentCommand.find({
+      $or: [
+        { status: "running" },
+        { status: { $in: ["success", "failed"] }, completedAt: { $gte: recentCutoff } },
+      ],
+    }).lean();
+
+    const commandsByHost = {};
+    for (const c of activeCommands) {
+      if (!commandsByHost[c.hostname]) commandsByHost[c.hostname] = {};
+      commandsByHost[c.hostname][c.kb] = {
+        commandId: c._id.toString(),
+        status: c.status,
+        output: c.output,
+      };
+    }
+
+    // Attach to each row
+    for (const row of out) {
+      const hostCmds = commandsByHost[row.hostname] || {};
+      const pkgName = (row.missingItem || "").split("/")[0].trim();
+      if (hostCmds[pkgName]) {
+        row.activeCommand = hostCmds[pkgName];
+      }
+    }
+
     res.json({ ok: true, data: out });
   } catch (e) {
     console.error(e);
