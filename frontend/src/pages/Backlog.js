@@ -99,7 +99,7 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued  }) {
         setOutput(res.data.output || "");
         if (!isWindows) {
           setState("done");
-          setTimeout(() => { setState("idle"); onPatched(); }, 3000);
+          setTimeout(() => { setState("idle"); onPatched(); }, 5000);
         } else {
           setState("queued");
           const commandId = res.data.commandId;
@@ -132,6 +132,13 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued  }) {
       setOutput(e?.response?.data?.error || e.message);
     }
   }
+
+   if (state === "patching")
+    return (
+      <span style={{ fontSize: 10, color: "hsl(45,100%,50%)", fontWeight: 700, whiteSpace: "nowrap" }}>
+        ⟳ Patching...
+      </span>
+    );
 
 if (state === "queued")
     return (

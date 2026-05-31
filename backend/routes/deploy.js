@@ -140,7 +140,25 @@ router.post("/patch", async (req, res) => {
 
       const pkgName = pkg.split("/")[0].trim();
 
-         const result = await ssh.execCommand(
+      // Check if apt is already running
+      const lockCheck = await ssh.execCommand(
+        `sudo lsof /var/lib/dpkg/lock-frontend 2>/dev/null | grep -c lock-frontend || echo 0`,
+        { timeout: 5000 },
+      );
+      const isLocked = parseInt((lockCheck.stdout || "").trim()) > 0;
+      if (isLocked) {
+        ssh.dispose();
+        return res.json({
+          ok: false,
+          hostname,
+          package: pkgName,
+          output:
+            "Another package installation is in progress. Wait for it to complete then try again.",
+          message: "apt locked",
+        });
+      }
+
+      const result = await ssh.execCommand(
         `echo 'password' | sudo -S DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=60 install --only-upgrade -y ${pkgName} 2>&1`,
         { timeout: 120000 },
       );
