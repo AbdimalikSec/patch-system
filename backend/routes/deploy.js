@@ -160,7 +160,7 @@ router.post("/patch", async (req, res) => {
 
       const result = await ssh.execCommand(
         `echo 'password' | sudo -S DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=60 install --only-upgrade -y ${pkgName} 2>&1`,
-        { timeout: 120000 },
+        { timeout: 300000  },
       );
 
       // Trigger kali collector to update count
