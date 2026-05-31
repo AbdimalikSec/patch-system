@@ -28,6 +28,7 @@ app.use("/api/agents",        requireAuth, require("./routes/agents"));
 app.use("/api/notifications", requireAuth, require("./routes/notifications"));
 app.use("/api/snapshots",     requireAuth, require("./routes/snapshots"));
 app.use("/api/groups",        requireAuth, require("./routes/groups"));
+app.use("/api/agent",         require("./routes/agentCommands"));
 app.use("/api/tickets",       requireAuth, require("./routes/tickets"));
 app.use("/api/deploy",        requireAuth, require("./routes/deploy"));
 
