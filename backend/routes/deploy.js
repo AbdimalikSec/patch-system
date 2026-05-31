@@ -5,7 +5,7 @@ const { execSync } = require("child_process");
 // ── Asset configs ─────────────────────────────────────────────────────────────
 const SSH_CONFIG = {
   kali: {
-    host: "10.10.10.63",
+    host: "10.10.10.62",
     port: 22,
     username: "stager",
     privateKeyPath: "/home/patch/.ssh/patch_key",
