@@ -93,14 +93,33 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued  }) {
         hostname,
         package: pkg,
       });
+
       if (res.data?.ok) {
-        setState("done");
         setOutput(res.data.output || "");
         if (!isWindows) {
-          setTimeout(() => {
-            setState("idle");
-            onPatched();
-          }, 3000);
+          setState("done");
+          setTimeout(() => { setState("idle"); onPatched(); }, 3000);
+        } else {
+          setState("queued");
+          const commandId = res.data.commandId;
+          if (commandId) {
+            const interval = setInterval(async () => {
+              try {
+                const statusRes = await axios.get(`${API}/api/agent/commands/status/${commandId}`);
+                const cmd = statusRes.data?.command;
+                if (cmd?.status === "success") {
+                  clearInterval(interval);
+                  setState("done");
+                  setOutput(`✓ Installed — restart ${hostname} to apply`);
+                  setTimeout(() => { setState("idle"); onPatched(); }, 8000);
+                } else if (cmd?.status === "failed") {
+                  clearInterval(interval);
+                  setState("error");
+                  setOutput(cmd.output || "Installation failed");
+                }
+              } catch {}
+            }, 10000);
+          }
         }
         // Windows stays on "done/queued" — restart required to apply
       } else {
@@ -113,18 +132,18 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued  }) {
     }
   }
 
-  if (state === "patching")
+if (state === "queued")
     return (
-      <span
-        style={{
-          fontSize: 10,
-          color: "hsl(45,100%,50%)",
-          fontWeight: 700,
-          whiteSpace: "nowrap",
-        }}
-      >
-        ⟳ Patching...
-      </span>
+      <div>
+        <span style={{ fontSize: 10, color: "hsl(210,100%,60%)", fontWeight: 700 }}>
+          ⟳ Agent installing...
+        </span>
+        {output && (
+          <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2, maxWidth: 220, wordBreak: "break-word" }}>
+            {output.slice(0, 100)}
+          </div>
+        )}
+      </div>
     );
 
   if (state === "done")
@@ -615,10 +634,9 @@ export default function Backlog() {
                                 style={{ fontSize: 11, color: "var(--muted)" }}
                               >
                                 <strong style={{ color: "hsl(210,100%,60%)" }}>
-                                  Verify & Queue
+                                  Patch Now
                                 </strong>{" "}
-                                confirms KB is pending via WinRM — restart DC1
-                                to apply
+                                sends install command to local agent on {g.hostname}
                               </div>
                             )}
                           </div>

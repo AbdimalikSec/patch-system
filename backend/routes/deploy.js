@@ -191,45 +191,16 @@ router.post("/patch", async (req, res) => {
     }
     const kb = kbMatch[0].toUpperCase();
 
-    const psCommand = `
-$ErrorActionPreference = 'SilentlyContinue'
-$Session = New-Object -ComObject Microsoft.Update.Session
-$Searcher = $Session.CreateUpdateSearcher()
-$SearchResult = $Searcher.Search("IsInstalled=0")
-$found = $false
-foreach ($u in $SearchResult.Updates) {
-    if ($u.KBArticleIDs -contains '${kb.replace("KB", "")}') {
-        $found = $true
-        Write-Output "FOUND: ${kb} - $($u.Title)"
-    }
-}
-if (-not $found) {
-    Write-Output "INFO: ${kb} not found in pending updates - may already be installed"
-} else {
-    Write-Output "QUEUED: ${kb} is pending - restart DC1 to apply. Use Windows Update to install interactively."
-}
-`;
-
-    const result = runPowerShellViaTempFile(config, psCommand);
-
-    if (result.success && result.output.includes("FOUND:")) {
-      try {
-        const Patch = require("../models/Patch");
-        await Patch.findOneAndUpdate(
-          { assetHostname: hostname },
-          { $addToSet: { pendingRestart: kb } },
-        );
-      } catch {}
-    }
+    const AgentCommand = require("../models/AgentCommand");
+    const cmd = await AgentCommand.create({ hostname, kb });
 
     return res.json({
-      ok: result.success,
+      ok: true,
       hostname,
       package: kb,
-      output: result.output.slice(0, 800),
-      message: result.success
-        ? `${kb} queued on ${hostname} — restart to apply`
-        : `WinRM command failed on ${hostname}`,
+      commandId: cmd._id.toString(),
+      output: `Agent on ${hostname} will install ${kb} within 60 seconds`,
+      message: `${kb} queued for ${hostname}`,
     });
   }
 
