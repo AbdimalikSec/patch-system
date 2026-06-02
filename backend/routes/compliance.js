@@ -29,7 +29,12 @@ router.get("/checks/:hostname", async (req, res) => {
     const checks = await ComplianceCheck.find({ assetHostname: { $regex: rx } })
       .sort({ result: 1, checkId: 1 })
       .lean();
-    res.json({ ok: true, count: checks.length, data: checks });
+    const { getISOControl } = require("../utils/isoMapping");
+    const enriched = checks.map(c => ({
+      ...c,
+      iso27001: getISOControl(c.title),
+    }));
+    res.json({ ok: true, count: enriched.length, data: enriched });
   } catch (e) {
     console.error(e);
     res.status(500).json({ ok: false, error: "server_error" });

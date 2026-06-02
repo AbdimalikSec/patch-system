@@ -58,6 +58,8 @@ function AssetCard({ row, checks, loadingChecks, isAuditor }) {
   const status      = checksArr.length === 0 ? "No Data" : failedCount > 0 ? "Non-Compliant" : "Compliant";
   const displayed   = showAll ? failedArr : failedArr.slice(0, 5);
 
+  
+
   return (
     <div className="card" style={{ padding: 0, overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "18px 24px", borderBottom: expanded ? "1px solid var(--line)" : "none" }}>
@@ -220,10 +222,129 @@ function buildPDFHtml(exportRows, checksMap, kpis, title) {
 </body></html>`;
 }
 
+function DomainCard({ domain, checks, isAuditor }) {
+  const [open, setOpen] = useState(false);
+  const failed = checks.filter(c => c.result === "failed").length;
+  const passed = checks.filter(c => c.result === "passed").length;
+  const total  = checks.length;
+  const score  = total > 0 ? Math.round((passed / total) * 100) : 0;
+
+  return (
+    <div key={domain} className="card" style={{ padding: 0, overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "16px 24px", cursor: "pointer" }}
+        onClick={() => setOpen(o => !o)}>
+        <ScoreGauge score={score} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>{domain}</div>
+          <div style={{ fontSize: 11, color: "var(--muted)" }}>
+            {failed} failed · {passed} passed · {total} mapped checks
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 20, fontWeight: 900, color: "hsl(350,100%,65%)" }}>{failed}</div>
+            <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase" }}>Failed</div>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 20, fontWeight: 900, color: "hsl(130,60%,50%)" }}>{passed}</div>
+            <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase" }}>Passed</div>
+          </div>
+          <button className="btn" style={{ padding: "6px 14px", fontSize: 12 }}>
+            {open ? "Hide" : "Details"}
+          </button>
+        </div>
+      </div>
+      {open && (
+        <div style={{ padding: "0 24px 16px", borderTop: "1px solid var(--line)" }}>
+          <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+            {checks.filter(c => c.result === "failed").map((c, i) => (
+              <div key={i} style={{
+                padding: "10px 14px", background: "var(--surface)", borderRadius: 8,
+                borderLeft: "3px solid hsl(350,100%,65%)", display: "flex", gap: 12, alignItems: "flex-start"
+              }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", minWidth: 60, marginTop: 1 }}>
+                  {c.iso27001.control}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 2 }}>{c.title}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                    Asset: {c.assetHostname} · Check #{c.checkId}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ISOView({ checksMap, rows, isAuditor }) {
+  const allChecks = useMemo(() => {
+    const out = [];
+    for (const row of rows) {
+      const checks = checksMap[row.hostname] ?? [];
+      for (const c of checks) {
+        if (c.iso27001) out.push({ ...c, assetHostname: row.hostname });
+      }
+    }
+    return out;
+  }, [checksMap, rows]);
+
+  const byDomain = useMemo(() => {
+    const map = {};
+    for (const c of allChecks) {
+      const domain = c.iso27001.domain;
+      if (!map[domain]) map[domain] = { domain, checks: [] };
+      map[domain].checks.push(c);
+    }
+    return Object.values(map).sort((a, b) => a.domain.localeCompare(b.domain));
+  }, [allChecks]);
+
+  const mappedFailed = allChecks.filter(c => c.result === "failed").length;
+  const mappedPassed = allChecks.filter(c => c.result === "passed").length;
+
+  return (
+    <div>
+      <div className="kpis" style={{ marginBottom: 24 }}>
+        <div className="card">
+          <div className="cardLabel">ISO 27001 Domains Covered</div>
+          <div className="cardValue">{byDomain.length}</div>
+        </div>
+        <div className="card">
+          <div className="cardLabel">Mapped Checks</div>
+          <div className="cardValue">{allChecks.length}</div>
+        </div>
+        <div className="card">
+          <div className="cardLabel">Failed (ISO-mapped)</div>
+          <div className="cardValue" style={{ color: "hsl(350,100%,65%)" }}>{mappedFailed}</div>
+        </div>
+        <div className="card">
+          <div className="cardLabel">Passed (ISO-mapped)</div>
+          <div className="cardValue" style={{ color: "hsl(130,60%,50%)" }}>{mappedPassed}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gap: 12 }}>
+        {byDomain.map(({ domain, checks }) => (
+          <DomainCard key={domain} domain={domain} checks={checks} isAuditor={isAuditor} />
+        ))}
+      </div>
+
+      {allChecks.length === 0 && (
+        <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>
+          No ISO 27001 mapped checks found. Make sure the backend is updated and compliance data is loaded.
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 export default function Compliance() {
   const { user } = useAuth();
   const isAuditor = user?.role === "auditor";
-
   const [rows, setRows]               = useState([]);
   const [checksMap, setChecksMap]     = useState({});
   const [loadingMain, setLoadingMain] = useState(true);
@@ -231,6 +352,7 @@ export default function Compliance() {
   const [q, setQ]                     = useState("");
   const [err, setErr]                 = useState("");
   const [exportTarget, setExportTarget] = useState("all"); // "all" or hostname
+  const [framework, setFramework] = useState("cis");
 
   async function loadSummary() {
     try {
@@ -308,7 +430,19 @@ export default function Compliance() {
       title="CIS Compliance"
       rightControls={
         <>
-          <input className="input" placeholder="Search hostname..." value={q} onChange={e => setQ(e.target.value)} />
+           <input className="input" placeholder="Search hostname..." value={q} onChange={e => setQ(e.target.value)} />
+          <div style={{ display: "flex", gap: 0, borderRadius: 8, overflow: "hidden", border: "1px solid var(--line)" }}>
+            {[["cis", "CIS Benchmark"], ["iso", "ISO 27001"]].map(([key, label]) => (
+              <button key={key} onClick={() => setFramework(key)}
+                style={{
+                  padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", border: "none",
+                  background: framework === key ? "var(--accent)" : "transparent",
+                  color: framework === key ? "#fff" : "var(--muted)",
+                }}>
+                {label}
+              </button>
+            ))}
+          </div>
           <button className="btn" onClick={loadSummary}>Refresh</button>
           <select className="input" value={exportTarget} onChange={e => setExportTarget(e.target.value)} style={{ minWidth: 160 }}>
             <option value="all">All Assets</option>
@@ -339,10 +473,13 @@ export default function Compliance() {
       {loadingMain && <div className="muted">Loading compliance data...</div>}
       {!loadingMain && (
         <div style={{ display: "grid", gap: 16 }}>
-          {sortedFiltered.map(row => (
-            <AssetCard key={row.hostname} row={row} checks={checksMap[row.hostname]}
-              loadingChecks={loadingChecks && !checksMap[row.hostname]} isAuditor={isAuditor} />
-          ))}
+           {framework === "cis"
+            ? sortedFiltered.map(row => (
+                <AssetCard key={row.hostname} row={row} checks={checksMap[row.hostname]}
+                  loadingChecks={loadingChecks && !checksMap[row.hostname]} isAuditor={isAuditor} />
+              ))
+            : <ISOView checksMap={checksMap} rows={sortedFiltered} isAuditor={isAuditor} />
+          }
         </div>
       )}
     </Layout>
