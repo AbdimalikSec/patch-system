@@ -1,0 +1,158 @@
+[
+  {
+    "control": "A.9.1.1",
+    "title": "Access Control Policy",
+    "domain": "A.9 — Access Control",
+    "keywords": ["password policy", "password history", "password age", "password length", "password complexity"]
+  },
+  {
+    "control": "A.9.2.1",
+    "title": "User Registration and De-registration",
+    "domain": "A.9 — Access Control",
+    "keywords": ["guest account", "duplicate uid", "duplicate user", "root is the only", "no legacy", "shadow group"]
+  },
+  {
+    "control": "A.9.2.3",
+    "title": "Management of Privileged Access Rights",
+    "domain": "A.9 — Access Control",
+    "keywords": ["administrator account", "rename administrator", "rename guest", "privileged", "root path integrity", "uid 0"]
+  },
+  {
+    "control": "A.9.4.1",
+    "title": "Information Access Restriction",
+    "domain": "A.9 — Access Control",
+    "keywords": ["anonymous", "anonymous sid", "anonymous access", "null session", "named pipes", "remotely accessible registry"]
+  },
+  {
+    "control": "A.9.4.2",
+    "title": "Secure Log-on Procedures",
+    "domain": "A.9 — Access Control",
+    "keywords": ["account lockout", "lockout threshold", "lockout duration", "lockout counter", "logon message", "message text", "message title", "convenience pin", "picture password", "screen lock", "password when a computer wakes", "require a password"]
+  },
+  {
+    "control": "A.9.4.3",
+    "title": "Password Management System",
+    "domain": "A.9 — Access Control",
+    "keywords": ["enforce password", "minimum password", "maximum password", "password must meet", "store passwords", "reversible encryption"]
+  },
+  {
+    "control": "A.10.1.1",
+    "title": "Policy on the Use of Cryptographic Controls",
+    "domain": "A.10 — Cryptography",
+    "keywords": ["encryption", "bitlocker", "fips", "tls", "ssl", "cryptography", "cipher", "secure channel", "ntlm", "kerberos", "reversible encryption"]
+  },
+  {
+    "control": "A.12.1.2",
+    "title": "Change Management",
+    "domain": "A.12 — Operations Security",
+    "keywords": ["windows update", "automatic update", "pause updates", "update feature", "windows store"]
+  },
+  {
+    "control": "A.12.2.1",
+    "title": "Controls Against Malware",
+    "domain": "A.12 — Operations Security",
+    "keywords": ["defender", "antivirus", "malware", "spyware", "windows security", "real-time protection", "apparmor", "selinux"]
+  },
+  {
+    "control": "A.12.3.1",
+    "title": "Information Backup",
+    "domain": "A.12 — Operations Security",
+    "keywords": ["backup", "volume shadow", "vss", "system restore"]
+  },
+  {
+    "control": "A.12.4.1",
+    "title": "Event Logging",
+    "domain": "A.12 — Operations Security",
+    "keywords": ["audit", "audit policy", "event log", "audit credential", "audit logon", "audit account", "audit privilege", "audit object", "audit process", "audit system", "audit directory", "audit policy change", "auditd", "audit log storage", "audit logs are not", "system is disabled when audit"]
+  },
+  {
+    "control": "A.12.4.3",
+    "title": "Administrator and Operator Logs",
+    "domain": "A.12 — Operations Security",
+    "keywords": ["powershell transcription", "powershell logging", "script block logging", "module logging"]
+  },
+  {
+    "control": "A.12.5.1",
+    "title": "Installation of Software on Operational Systems",
+    "domain": "A.12 — Operations Security",
+    "keywords": ["software installation", "windows installer", "msi", "autoplay", "autorun"]
+  },
+  {
+    "control": "A.12.6.1",
+    "title": "Management of Technical Vulnerabilities",
+    "domain": "A.12 — Operations Security",
+    "keywords": ["security update", "missing patch", "hotfix", "vulnerability", "exploit", "cve"]
+  },
+  {
+    "control": "A.12.6.2",
+    "title": "Restrictions on Software Installation",
+    "domain": "A.12 — Operations Security",
+    "keywords": ["application control", "applocker", "software restriction", "unsigned", "execution policy"]
+  },
+  {
+    "control": "A.13.1.1",
+    "title": "Network Controls",
+    "domain": "A.13 — Communications Security",
+    "keywords": ["firewall", "default deny", "firewall policy", "ipv6 default deny", "loopback traffic", "packet redirect", "icmp redirect", "reverse path", "ipv6 router", "wireless interface", "network interface"]
+  },
+  {
+    "control": "A.13.1.2",
+    "title": "Security of Network Services",
+    "domain": "A.13 — Communications Security",
+    "keywords": ["network security", "smb", "netbios", "llmnr", "wpad", "network access", "remote registry", "remote desktop", "rdp", "telnet", "rsh", "ftp", "tftp", "hosts.deny", "hosts.allow", "dccp", "sctp", "rds", "tipc"]
+  },
+  {
+    "control": "A.13.2.1",
+    "title": "Information Transfer Policies",
+    "domain": "A.13 — Communications Security",
+    "keywords": ["clipboard synchronization", "user activities", "connected-standby", "network connectivity during"]
+  },
+  {
+    "control": "A.14.2.5",
+    "title": "Secure System Engineering Principles",
+    "domain": "A.14 — System Acquisition",
+    "keywords": ["xd/nx", "nx support", "aslr", "dep", "secure boot", "uefi", "boot", "kernel", "module loading"]
+  },
+  {
+    "control": "A.11.2.8",
+    "title": "Unattended User Equipment",
+    "domain": "A.11 — Physical Security",
+    "keywords": ["screen saver", "screen lock", "idle", "inactivity", "lock workstation", "picture password", "convenience pin"]
+  },
+  {
+    "control": "A.11.2.9",
+    "title": "Clear Desk and Clear Screen Policy",
+    "domain": "A.11 — Physical Security",
+    "keywords": ["screen lock", "require a password when", "password on wake", "lock on sleep"]
+  },
+  {
+    "control": "A.8.1.1",
+    "title": "Inventory of Assets",
+    "domain": "A.8 — Asset Management",
+    "keywords": ["asset inventory", "hardware inventory", "software inventory", "usb storage", "removable storage", "removable media"]
+  },
+  {
+    "control": "A.8.3.1",
+    "title": "Management of Removable Media",
+    "domain": "A.8 — Asset Management",
+    "keywords": ["usb storage", "removable storage", "removable media", "autoplay", "autorun", "disable usb"]
+  },
+  {
+    "control": "A.16.1.2",
+    "title": "Reporting Information Security Events",
+    "domain": "A.16 — Incident Management",
+    "keywords": ["event log", "security log", "log size", "log retention", "log full", "audit log storage", "system is disabled when audit", "audit logs are not automatically"]
+  },
+  {
+    "control": "A.6.2.2",
+    "title": "Teleworking",
+    "domain": "A.6 — Organisation of Security",
+    "keywords": ["remote access", "remote desktop", "vpn", "remote management", "winrm", "remote shell"]
+  },
+  {
+    "control": "A.7.2.2",
+    "title": "Information Security Awareness",
+    "domain": "A.7 — Human Resource Security",
+    "keywords": ["legal notice", "logon banner", "warning banner", "interactive logon message"]
+  }
+]
