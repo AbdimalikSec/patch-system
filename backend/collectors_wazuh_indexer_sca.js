@@ -27,7 +27,6 @@ const INDEX = "wazuh-alerts-4.x-*";
 // Agent id → hostname mapping — keeps queries fast and avoids duplicate names.
 // Add every agent you have here. id is the Wazuh agent id (string, zero-padded).
 const AGENTS = [
-  { id: "000", hostname: "Wazuh" },
   { id: "001", hostname: "DC1" },
   { id: "004", hostname: "HQ-staff-01" },
   { id: "005", hostname: "kali" },
