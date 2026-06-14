@@ -126,9 +126,17 @@ function normalise(doc, hostname, agentId) {
 async function upsertChecks(hostname, agentId, normalisedChecks) {
   let saved = 0;
   for (const c of normalisedChecks) {
+    const existing = await ComplianceCheck.findOne(
+      { assetHostname: c.assetHostname, checkId: c.checkId },
+      { result: 1 },
+    ).lean();
+
+    const resultChanged = !existing || existing.result !== c.result;
+    const update = resultChanged ? { ...c, statusChangedAt: new Date() } : c;
+
     await ComplianceCheck.findOneAndUpdate(
       { assetHostname: c.assetHostname, checkId: c.checkId },
-      c,
+      update,
       { upsert: true, new: true },
     );
     saved++;

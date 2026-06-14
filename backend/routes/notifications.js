@@ -14,7 +14,7 @@ router.get("/new-failures", async (req, res) => {
     // Find checks that are currently failed AND were updated after login time
     const newFailures = await ComplianceCheck.find({
       result: "failed",
-      updatedAt: { $gt: since },
+      statusChangedAt: { $gt: since },
     })
       .select("assetHostname checkId title result updatedAt policy")
       .sort({ updatedAt: -1 })

@@ -16,6 +16,7 @@ const ComplianceCheckSchema = new mongoose.Schema(
     command:       { type: Array,  default: [] },
 
     collectedAt:   { type: Date, default: Date.now, index: true },
+    statusChangedAt: { type: Date, default: Date.now, index: true },
   },
   { timestamps: true }
 );

@@ -224,10 +224,11 @@ function buildPDFHtml(exportRows, checksMap, kpis, title) {
 
 function DomainCard({ domain, checks, isAuditor }) {
   const [open, setOpen] = useState(false);
+  const [showResult, setShowResult] = useState("failed");
   const failed = checks.filter(c => c.result === "failed").length;
   const passed = checks.filter(c => c.result === "passed").length;
   const total  = checks.length;
-  const score  = total > 0 ? Math.round((passed / total) * 100) : 0;
+  const score = total > 0 ? Math.round((failed / total) * 100) : 0;
 
   return (
     <div key={domain} className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -254,28 +255,38 @@ function DomainCard({ domain, checks, isAuditor }) {
           </button>
         </div>
       </div>
-      {open && (
-        <div style={{ padding: "0 24px 16px", borderTop: "1px solid var(--line)" }}>
-          <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
-            {checks.filter(c => c.result === "failed").map((c, i) => (
-              <div key={i} style={{
-                padding: "10px 14px", background: "var(--surface)", borderRadius: 8,
-                borderLeft: "3px solid hsl(350,100%,65%)", display: "flex", gap: 12, alignItems: "flex-start"
-              }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", minWidth: 60, marginTop: 1 }}>
-                  {c.iso27001.control}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 2 }}>{c.title}</div>
-                  <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                    Asset: {c.assetHostname} · Check #{c.checkId}
-                  </div>
-                </div>
-              </div>
-            ))}
+  {open && (
+  <div style={{ padding: "0 24px 16px", borderTop: "1px solid var(--line)" }}>
+    <div style={{ display: "flex", gap: 6, marginTop: 12, marginBottom: 12 }}>
+      {["failed", "passed"].map(r => (
+        <button key={r} onClick={e => { e.stopPropagation(); setShowResult(r); }}
+          className={`btn-tab ${showResult === r ? "active" : ""}`}
+          style={{ fontSize: 11, padding: "5px 12px" }}>
+          {r === "failed" ? `Failed (${checks.filter(c => c.result === "failed").length})` : `Passed (${checks.filter(c => c.result === "passed").length})`}
+        </button>
+      ))}
+    </div>
+    <div style={{ display: "grid", gap: 8 }}>
+      {checks.filter(c => c.result === showResult).map((c, i) => (
+        <div key={i} style={{
+          padding: "10px 14px", background: "var(--surface)", borderRadius: 8,
+          borderLeft: `3px solid ${showResult === "failed" ? "hsl(350,100%,65%)" : "hsl(130,60%,50%)"}`,
+          display: "flex", gap: 12, alignItems: "flex-start"
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", minWidth: 60, marginTop: 1 }}>
+            {c.iso27001.control}
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 2 }}>{c.title}</div>
+            <div style={{ fontSize: 11, color: "var(--muted)" }}>
+              Asset: {c.assetHostname} · Check #{c.checkId}
+            </div>
           </div>
         </div>
-      )}
+      ))}
+    </div>
+  </div>
+)}
     </div>
   );
 }
