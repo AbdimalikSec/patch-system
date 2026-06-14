@@ -124,11 +124,11 @@ export default function AssetDetails() {
         setRiskRes(r.data);
         setPatchRes(p.data);
         setCompRes(c.data);
-         setChecksRes(ch.data?.data || []);
+        setChecksRes(ch.data?.data || []);
         try {
           const agentsRes = await axios.get(`${API}/api/agents`);
           const found = (agentsRes.data?.data || []).find(
-            (a) => (a.name || "").toLowerCase() === hostname.toLowerCase()
+            (a) => (a.hostname || "").toLowerCase() === hostname.toLowerCase(),
           );
           setAgentStatus(found?.status || null);
         } catch {}
@@ -148,9 +148,7 @@ export default function AssetDetails() {
   const patch = patchRes?.data || null;
   const comp = compRes?.data || null;
 
-
-
-const agentLastSeen =
+  const agentLastSeen =
     checksRes.length > 0
       ? checksRes.reduce(
           (latest, c) => (c.collectedAt > latest ? c.collectedAt : latest),
@@ -377,9 +375,33 @@ const agentLastSeen =
                     : "-"}
                 </div>
               </div>
-              <span className={badge(risk.priority)}>
-                {risk.priority || "Low"} — Score {risk.score ?? 0}
-              </span>
+              <div
+                className={badge(risk.priority)}
+                style={{
+                  borderRadius: "var(--radius-md)",
+                  padding: "8px 16px",
+                  textAlign: "center",
+                  minWidth: 110,
+                  display: "inline-flex",
+                  flexDirection: "column",
+                  gap: 2,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: "0.04em",
+                    textTransform: "uppercase",
+                    opacity: 0.85,
+                  }}
+                >
+                  {risk.priority || "Low"}
+                </div>
+                <div style={{ fontSize: 20, fontWeight: 800 }}>
+                  {risk.score ?? 0}
+                </div>
+              </div>
             </div>
           </div>
 
