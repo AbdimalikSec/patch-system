@@ -29,7 +29,6 @@ const INDEX = "wazuh-alerts-4.x-*";
 const AGENTS = [
   { id: "000", hostname: "Wazuh" },
   { id: "001", hostname: "DC1" },
-  { id: "002", hostname: "BR-staff" },
   { id: "004", hostname: "HQ-staff-01" },
   { id: "005", hostname: "kali" },
 ];
