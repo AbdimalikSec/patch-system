@@ -278,5 +278,18 @@ router.get("/all", async (req, res) => {
   }
 });
 
+router.get("/cve/:hostname", async (req, res) => {
+  try {
+    const { hostname } = req.params;
+    const rx = new RegExp("^" + hostname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i");
+    const matches = await CVEMatch.find({ assetHostname: { $regex: rx } })
+      .sort({ cvssScore: -1 })
+      .lean();
+    res.json({ ok: true, count: matches.length, data: matches });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: "server_error" });
+  }
+});
+
 module.exports = router;
 module.exports.computeRisk = computeRisk;

@@ -90,7 +90,8 @@ export default function AssetDetails() {
   const [cisPage, setCisPage] = useState(1);
   const [resultFilter, setResultFilter] = useState("all");
   const pageSize = 20;
-
+  const [cveMatches, setCveMatches] = useState([]);
+  const [expandedPkg, setExpandedPkg] = useState(null);
   const [selectedCheck, setSelectedCheck] = useState(null);
 
   const loadTickets = useCallback(async () => {
@@ -109,7 +110,7 @@ export default function AssetDetails() {
       try {
         setLoading(true);
         setErr("");
-        const [r, p, c, ch] = await Promise.all([
+        const [r, p, c, ch, cve] = await Promise.all([
           axios.get(`${API}/api/risk/latest/${encodeURIComponent(hostname)}`),
           axios.get(
             `${API}/api/patches/latest/${encodeURIComponent(hostname)}`,
@@ -120,11 +121,13 @@ export default function AssetDetails() {
           axios.get(
             `${API}/api/compliance/checks/${encodeURIComponent(hostname)}`,
           ),
+          axios.get(`${API}/api/risk/cve/${encodeURIComponent(hostname)}`),
         ]);
         setRiskRes(r.data);
         setPatchRes(p.data);
         setCompRes(c.data);
         setChecksRes(ch.data?.data || []);
+        setCveMatches(cve.data?.data || []);
         try {
           const agentsRes = await axios.get(`${API}/api/agents`);
           const found = (agentsRes.data?.data || []).find(
@@ -214,34 +217,82 @@ export default function AssetDetails() {
 
   const recommendedPlan = useMemo(() => {
     const plan = [];
-    if (["critical", "high"].includes((risk.priority || "").toLowerCase())) {
-      plan.push("Schedule patch window within 24–48 hours.");
+
+    // Step 1: urgency framing based on priority + exploit status
+    const hasExploits = risk?.breakdown?.hasExploits;
+    const exploitIds = risk?.breakdown?.exploitCVEIds || [];
+    if (hasExploits) {
+      plan.push({
+        text: `URGENT: ${exploitIds.length} CVE${exploitIds.length > 1 ? "s" : ""} (${exploitIds.join(", ")}) have known public exploit code. Patch within 24 hours regardless of maintenance schedule.`,
+        urgent: true,
+      });
+    } else if (
+      ["critical", "high"].includes((risk.priority || "").toLowerCase())
+    ) {
+      plan.push({
+        text: `Risk priority is ${risk.priority} (score ${risk.score}). Schedule a patch window within 24–48 hours.`,
+      });
     } else if ((risk.priority || "").toLowerCase() === "medium") {
-      plan.push("Schedule patch window within 7 days.");
+      plan.push({
+        text: `Risk priority is Medium (score ${risk.score}). Schedule a patch window within 7 days.`,
+      });
     } else {
-      plan.push("Patch in next regular maintenance cycle.");
+      plan.push({
+        text: `Risk priority is Low (score ${risk.score}). Patch in the next regular maintenance cycle.`,
+      });
     }
+
+    // Step 2: missing patches, referencing highest-CVSS CVE if known
     if ((patch?.missingCount ?? 0) > 0) {
-      plan.push(
-        `Review ${patch.missingCount} pending updates and prioritize security updates first.`,
-      );
+      if (cveMatches.length > 0) {
+        const top = [...cveMatches].sort(
+          (a, b) => (b.cvssScore || 0) - (a.cvssScore || 0),
+        )[0];
+        plan.push({
+          text: `${patch.missingCount} update${patch.missingCount > 1 ? "s" : ""} missing. Highest severity: ${top.cveId} (CVSS ${(top.cvssScore || 0).toFixed(1)}, ${top.severity || "Unknown"}) on ${top.patchRef}. Apply this update first via Patch Backlog.`,
+        });
+      } else {
+        plan.push({
+          text: `${patch.missingCount} update${patch.missingCount > 1 ? "s" : ""} missing, but no CVE data matched yet. Run CVE enrichment to identify severity.`,
+        });
+      }
     } else {
-      plan.push(
-        "No missing patch items reported — verify collectors ran recently.",
-      );
+      plan.push({
+        text: "No missing patch items reported — verify collectors ran recently.",
+      });
     }
+
+    // Step 3: compliance failures + ticket status
     if (scaFailedCount > 0) {
-      plan.push(
-        `Address ${scaFailedCount} CIS compliance failures — create tickets for failed checks to track remediation.`,
-      );
+      if (openTickets > 0 || inProgressCount > 0) {
+        plan.push({
+          text: `${scaFailedCount} CIS compliance failure${scaFailedCount > 1 ? "s" : ""}. ${openTickets} open and ${inProgressCount} in-progress ticket${openTickets + inProgressCount > 1 ? "s" : ""} already tracking remediation.`,
+        });
+      } else {
+        plan.push({
+          text: `${scaFailedCount} CIS compliance failure${scaFailedCount > 1 ? "s" : ""} with no tickets yet. Go to Compliance tab, filter Failed, and create tickets for the highest-impact checks.`,
+        });
+      }
     } else {
-      plan.push("Compliance shows no failures.");
+      plan.push({
+        text: "Compliance shows no failures — no remediation tickets needed.",
+      });
     }
-    plan.push(
-      "Re-run collectors and validate risk score decreases after remediation.",
-    );
+
+    // Step 4: verification
+    plan.push({
+      text: "After applying patches or fixing compliance issues, run a rescan (remediate_and_rescan.sh) or wait for the next scheduled scan, then verify the risk score decreases on this page.",
+    });
+
     return plan;
-  }, [risk.priority, patch?.missingCount, scaFailedCount]);
+  }, [
+    risk,
+    patch?.missingCount,
+    scaFailedCount,
+    cveMatches,
+    openTickets,
+    inProgressCount,
+  ]);
 
   const openTickets = tickets.filter((t) => t.status === "open").length;
   const inProgressCount = tickets.filter(
@@ -477,8 +528,9 @@ export default function AssetDetails() {
             <TabButton active={tab === "patch"} onClick={() => setTab("patch")}>
               Patch Backlog
             </TabButton>
-            <TabButton active={tab === "risk"} onClick={() => setTab("risk")}>
-              Risk Intelligence
+            <TabButton active={tab === "cve"} onClick={() => setTab("cve")}>
+              CVE Intelligence{" "}
+              {cveMatches.length > 0 ? `(${cveMatches.length})` : ""}
             </TabButton>
             <TabButton active={tab === "plan"} onClick={() => setTab("plan")}>
               Remediation Plan
@@ -858,11 +910,13 @@ export default function AssetDetails() {
           )}
 
           {/* ── Risk Tab ── */}
-          {tab === "risk" && (
+          {/* ── CVE Intelligence Tab ── */}
+          {tab === "cve" && (
             <div className="card">
               <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 16 }}>
-                Risk Intelligence Explanation
+                CVE Intelligence
               </div>
+
               {risk?.breakdown?.hasExploits && (
                 <div
                   style={{
@@ -899,79 +953,219 @@ export default function AssetDetails() {
                       Known exploit code exists. Risk score boosted 25%. Patch
                       immediately.
                     </div>
-                    {risk.breakdown.exploitCVEIds?.length > 0 && (
-                      <div
-                        style={{
-                          marginTop: 8,
-                          display: "flex",
-                          gap: 6,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        {risk.breakdown.exploitCVEIds.map((id) => (
-                          <span
-                            key={id}
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 700,
-                              padding: "2px 8px",
-                              borderRadius: 4,
-                              background: "hsla(350,100%,65%,0.15)",
-                              color: "hsl(350,100%,65%)",
-                              border: "1px solid hsla(350,100%,65%,0.3)",
-                            }}
-                          >
-                            {id}
-                          </span>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
-              <div className="tableWrap" style={{ padding: 24 }}>
-                {Array.isArray(risk.reasons) && risk.reasons.length > 0 ? (
-                  <div style={{ display: "grid", gap: 12 }}>
-                    {risk.reasons.map((x, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          display: "flex",
-                          gap: 12,
-                          alignItems: "flex-start",
-                        }}
-                      >
+
+              {cveMatches.length === 0 ? (
+                <div className="muted" style={{ padding: 20 }}>
+                  No CVE matches found for this asset's missing patches. Run the
+                  CVE enrichment collector after new patch data arrives.
+                </div>
+              ) : (
+                <>
+                  <div
+                    className="muted"
+                    style={{ marginBottom: 16, fontSize: 13 }}
+                  >
+                    {cveMatches.length} CVE{cveMatches.length > 1 ? "s" : ""}{" "}
+                    across {new Set(cveMatches.map((c) => c.patchRef)).size}{" "}
+                    missing patch
+                    {new Set(cveMatches.map((c) => c.patchRef)).size > 1
+                      ? "es"
+                      : ""}
+                    . Highest CVSS:{" "}
+                    {Math.max(
+                      ...cveMatches.map((c) => c.cvssScore || 0),
+                    ).toFixed(1)}
+                  </div>
+
+                  {Array.from(
+                    cveMatches.reduce((map, c) => {
+                      const key = c.patchRef || "unknown";
+                      if (!map.has(key))
+                        map.set(key, { patchTitle: c.patchTitle, items: [] });
+                      map.get(key).items.push(c);
+                      return map;
+                    }, new Map()),
+                  )
+                    .sort((a, b) => {
+                      const maxA = Math.max(
+                        ...a[1].items.map((c) => c.cvssScore || 0),
+                      );
+                      const maxB = Math.max(
+                        ...b[1].items.map((c) => c.cvssScore || 0),
+                      );
+                      return maxB - maxA;
+                    })
+                    .map(([patchRef, group]) => {
+                      const maxCvss = Math.max(
+                        ...group.items.map((c) => c.cvssScore || 0),
+                      );
+                      const isOpen = expandedPkg === patchRef;
+                      return (
                         <div
+                          key={patchRef}
                           style={{
-                            width: 8,
-                            height: 8,
-                            borderRadius: "50%",
-                            background: x.includes("EXPLOIT")
-                              ? "hsl(350,100%,65%)"
-                              : "var(--accent)",
-                            marginTop: 6,
-                          }}
-                        />
-                        <div
-                          style={{
-                            fontSize: 15,
-                            lineHeight: 1.6,
-                            color: x.includes("EXPLOIT")
-                              ? "hsl(350,100%,65%)"
-                              : "inherit",
+                            border: "1px solid var(--line)",
+                            borderRadius: "var(--radius-md)",
+                            marginBottom: 10,
+                            overflow: "hidden",
                           }}
                         >
-                          {x}
+                          <div
+                            onClick={() =>
+                              setExpandedPkg(isOpen ? null : patchRef)
+                            }
+                            style={{
+                              padding: "12px 16px",
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              cursor: "pointer",
+                              background: "var(--panel)",
+                            }}
+                          >
+                            <div>
+                              <div
+                                className="mono"
+                                style={{
+                                  fontWeight: 700,
+                                  fontSize: 13,
+                                  color: "var(--accent)",
+                                }}
+                              >
+                                {patchRef}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  color: "var(--muted)",
+                                  marginTop: 2,
+                                }}
+                              >
+                                {group.patchTitle || patchRef}
+                              </div>
+                            </div>
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 10,
+                              }}
+                            >
+                              <span
+                                className={resultBadge(
+                                  maxCvss >= 7
+                                    ? "failed"
+                                    : maxCvss >= 4
+                                      ? "not applicable"
+                                      : "passed",
+                                )}
+                              >
+                                Max CVSS {maxCvss.toFixed(1)}
+                              </span>
+                              <span
+                                style={{ fontSize: 12, color: "var(--muted)" }}
+                              >
+                                {group.items.length} CVE
+                                {group.items.length > 1 ? "s" : ""}
+                              </span>
+                              <span style={{ fontSize: 12 }}>
+                                {isOpen ? "▲" : "▼"}
+                              </span>
+                            </div>
+                          </div>
+
+                          {isOpen && (
+                            <div className="tableWrap">
+                              <table>
+                                <thead>
+                                  <tr>
+                                    <th style={{ width: 160 }}>CVE ID</th>
+                                    <th style={{ width: 100 }}>CVSS</th>
+                                    <th style={{ width: 110 }}>Severity</th>
+                                    <th style={{ width: 130 }}>Exploit</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {group.items
+                                    .sort(
+                                      (a, b) =>
+                                        (b.cvssScore || 0) - (a.cvssScore || 0),
+                                    )
+                                    .map((c) => (
+                                      <tr key={c.cveId}>
+                                        <td
+                                          className="mono"
+                                          style={{
+                                            fontSize: 12,
+                                            color: "var(--accent)",
+                                          }}
+                                        >
+                                          {c.cveId}
+                                        </td>
+                                        <td
+                                          style={{
+                                            fontSize: 13,
+                                            fontWeight: 700,
+                                          }}
+                                        >
+                                          {(c.cvssScore ?? 0).toFixed(1)}
+                                        </td>
+                                        <td>
+                                          <span
+                                            className={resultBadge(
+                                              (
+                                                c.severity || ""
+                                              ).toLowerCase() === "critical" ||
+                                                (
+                                                  c.severity || ""
+                                                ).toLowerCase() === "high"
+                                                ? "failed"
+                                                : (
+                                                      c.severity || ""
+                                                    ).toLowerCase() === "medium"
+                                                  ? "not applicable"
+                                                  : "passed",
+                                            )}
+                                          >
+                                            {c.severity || "Unknown"}
+                                          </span>
+                                        </td>
+                                        <td>
+                                          {c.hasExploit ? (
+                                            <span
+                                              style={{
+                                                color: "hsl(350,100%,65%)",
+                                                fontWeight: 700,
+                                                fontSize: 12,
+                                              }}
+                                            >
+                                              🔥 Known exploit
+                                            </span>
+                                          ) : (
+                                            <span
+                                              style={{
+                                                color: "var(--muted)",
+                                                fontSize: 12,
+                                              }}
+                                            >
+                                              No known exploit
+                                            </span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="muted">
-                    No specific risk factors identified.
-                  </div>
-                )}
-              </div>
+                      );
+                    })}
+                </>
+              )}
             </div>
           )}
 
@@ -997,8 +1191,12 @@ export default function AssetDetails() {
                           width: 24,
                           height: 24,
                           borderRadius: "50%",
-                          background: "var(--accent-muted)",
-                          color: "var(--accent)",
+                          background: x.urgent
+                            ? "hsla(350,100%,65%,0.15)"
+                            : "var(--accent-muted)",
+                          color: x.urgent
+                            ? "hsl(350,100%,65%)"
+                            : "var(--accent)",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
@@ -1007,9 +1205,18 @@ export default function AssetDetails() {
                           flexShrink: 0,
                         }}
                       >
-                        {i + 1}
+                        {x.urgent ? "🔥" : i + 1}
                       </div>
-                      <div style={{ fontSize: 15, lineHeight: 1.6 }}>{x}</div>
+                      <div
+                        style={{
+                          fontSize: 15,
+                          lineHeight: 1.6,
+                          color: x.urgent ? "hsl(350,100%,65%)" : "inherit",
+                          fontWeight: x.urgent ? 700 : 400,
+                        }}
+                      >
+                        {x.text}
+                      </div>
                     </div>
                   ))}
                 </div>
