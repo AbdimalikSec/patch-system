@@ -217,13 +217,18 @@ async function enrichAsset(patch, debianDb) {
   const os       = patch.os;
   const missing  = patch.missing || [];
 
+  // Clear stale CVE records for this asset before re-enriching — prevents
+  // accumulation of CVE matches for patches that are no longer missing.
+  const deleted = await CVEMatch.deleteMany({ assetHostname: hostname });
+  if (deleted.deletedCount > 0) {
+    console.log(`  [~] ${hostname}: cleared ${deleted.deletedCount} stale CVE record(s)`);
+  }
+
   if (missing.length === 0) {
     console.log(`  [~] ${hostname}: no missing patches to enrich`);
     return { matched: 0, stored: 0, exploits: 0 };
   }
-
   console.log(`  [*] ${hostname} (${os}): enriching ${missing.length} missing patches...`);
-
   let matched = 0, stored = 0, exploits = 0;
 
   for (const patchRef of missing) {
