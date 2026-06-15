@@ -122,6 +122,35 @@ router.post("/users", requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+// PUT /api/auth/users/:id - update username, role, and/or password
+router.put("/users/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { username, role, password } = req.body;
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ ok: false, error: "user_not_found" });
+
+    if (username && username.trim()) {
+      const existing = await User.findOne({ username: username.trim().toLowerCase(), _id: { $ne: user._id } });
+      if (existing) return res.status(409).json({ ok: false, error: "username_taken" });
+      user.username = username.trim().toLowerCase();
+    }
+
+    if (role && ["admin", "analyst", "auditor"].includes(role)) {
+      user.role = role;
+    }
+
+    if (password && password.length >= 8) {
+      user.password = password; // assumes pre-save hook hashes this, same as create route
+    }
+
+    await user.save();
+    res.json({ ok: true, data: { id: user._id, username: user.username, role: user.role } });
+  } catch (e) {
+    console.error("Update user error:", e.message);
+    res.status(500).json({ ok: false, error: "server_error" });
+  }
+});
+
 // DELETE /api/auth/users/:id
 router.delete("/users/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -135,5 +164,6 @@ router.delete("/users/:id", requireAuth, requireAdmin, async (req, res) => {
     res.status(500).json({ ok: false, error: "server_error" });
   }
 });
+
 
 module.exports = router;

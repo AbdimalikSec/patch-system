@@ -215,6 +215,12 @@ export default function AssetDetails() {
     setCisPage(1);
   }, [cisQuery, resultFilter]);
 
+   const openTickets = tickets.filter((t) => t.status === "open").length;
+  const inProgressCount = tickets.filter(
+    (t) => t.status === "in-progress",
+  ).length;
+  const resolvedCount = tickets.filter((t) => t.status === "resolved").length;
+
   const recommendedPlan = useMemo(() => {
     const plan = [];
 
@@ -294,11 +300,6 @@ export default function AssetDetails() {
     inProgressCount,
   ]);
 
-  const openTickets = tickets.filter((t) => t.status === "open").length;
-  const inProgressCount = tickets.filter(
-    (t) => t.status === "in-progress",
-  ).length;
-  const resolvedCount = tickets.filter((t) => t.status === "resolved").length;
 
   const headerRight = (
     <span className={statusBadge(agentStatus)}>
