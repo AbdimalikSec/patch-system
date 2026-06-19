@@ -1,7 +1,7 @@
 const router = require("express").Router();
-const Asset           = require("../models/Asset");
-const Patch           = require("../models/Patch");
-const Compliance      = require("../models/Compliance");
+const Asset = require("../models/Asset");
+const Patch = require("../models/Patch");
+const Compliance = require("../models/Compliance");
 const ComplianceCheck = require("../models/ComplianceCheck");
 
 function escapeRegex(str = "") {
@@ -10,7 +10,9 @@ function escapeRegex(str = "") {
 
 async function findLatestCaseInsensitive(Model, field, hostname) {
   const rx = new RegExp(`^${escapeRegex(hostname)}$`, "i");
-  return Model.findOne({ [field]: { $regex: rx } }).sort({ collectedAt: -1 }).lean();
+  return Model.findOne({ [field]: { $regex: rx } })
+    .sort({ collectedAt: -1 })
+    .lean();
 }
 
 // GET /api/dashboard/patches/backlog
@@ -20,7 +22,11 @@ router.get("/patches/backlog", async (req, res) => {
     const out = [];
 
     for (const a of assets) {
-      const p = await findLatestCaseInsensitive(Patch, "assetHostname", a.hostname);
+      const p = await findLatestCaseInsensitive(
+        Patch,
+        "assetHostname",
+        a.hostname,
+      );
       if (!p) continue;
 
       const missing = Array.isArray(p.missing) ? p.missing : [];
@@ -35,7 +41,6 @@ router.get("/patches/backlog", async (req, res) => {
           pendingRestart: p.pendingRestart || [],
         });
       }
-      
 
       if ((p.missingCount || 0) > 0 && missing.length === 0) {
         out.push({
@@ -48,13 +53,13 @@ router.get("/patches/backlog", async (req, res) => {
       }
     }
 
-     // Attach active/recent commands so frontend can show persistent patch state
-    const AgentCommand = require("../models/AgentCommand");
+    // Attach active/recent commands so frontend can show persistent patch state
     const recentCutoff = new Date(Date.now() - 10 * 60 * 1000); // last 10 min
     const activeCommands = await AgentCommand.find({
       $or: [
         { status: "running" },
-        { status: { $in: ["success", "failed"] }, completedAt: { $gte: recentCutoff } },
+        { status: "success" },
+        { status: "failed", completedAt: { $gte: recentCutoff } },
       ],
     }).lean();
 
@@ -91,7 +96,11 @@ router.get("/compliance/failed", async (req, res) => {
     const out = [];
 
     for (const a of assets) {
-      const c = await findLatestCaseInsensitive(Compliance, "assetHostname", a.hostname);
+      const c = await findLatestCaseInsensitive(
+        Compliance,
+        "assetHostname",
+        a.hostname,
+      );
       if (!c) continue;
 
       const failed = Array.isArray(c.failed) ? c.failed : [];
@@ -135,9 +144,17 @@ router.get("/compliance/summary", async (req, res) => {
       const rx = new RegExp(`^${escapeRegex(a.hostname)}$`, "i");
 
       const [failedCount, totalCount, latestCheck] = await Promise.all([
-        ComplianceCheck.countDocuments({ assetHostname: { $regex: rx }, result: "failed" }),
-        ComplianceCheck.countDocuments({ assetHostname: { $regex: rx }, result: { $in: ["failed", "passed"] } }),
-        ComplianceCheck.findOne({ assetHostname: { $regex: rx } }).sort({ collectedAt: -1 }).lean(),
+        ComplianceCheck.countDocuments({
+          assetHostname: { $regex: rx },
+          result: "failed",
+        }),
+        ComplianceCheck.countDocuments({
+          assetHostname: { $regex: rx },
+          result: { $in: ["failed", "passed"] },
+        }),
+        ComplianceCheck.findOne({ assetHostname: { $regex: rx } })
+          .sort({ collectedAt: -1 })
+          .lean(),
       ]);
 
       if (totalCount === 0) {
