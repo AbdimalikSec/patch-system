@@ -49,8 +49,72 @@ function rankPriority(p) {
   return { Critical: 4, High: 3, Medium: 2, Low: 1 }[p] || 0;
 }
 
+function AptUpdateButton({ hostname }) {
+  const [state, setState] = useState("idle");
+  const [output, setOutput] = useState("");
+
+  async function handleUpdate() {
+    if (!window.confirm(`Refresh package index on ${hostname}?\n\nThis runs: apt-get update`)) return;
+    setState("updating");
+    setOutput("");
+    try {
+      const res = await axios.post(`${API}/api/deploy/apt-update`, { hostname });
+      if (res.data?.ok) {
+        setState("done");
+        setOutput("Package index refreshed successfully");
+        setTimeout(() => setState("idle"), 5000);
+      } else {
+        setState("error");
+        setOutput(res.data?.output || res.data?.error || "Update failed");
+      }
+    } catch (e) {
+      setState("error");
+      setOutput(e?.response?.data?.error || e.message);
+    }
+  }
+
+  if (state === "updating")
+    return (
+      <span style={{ fontSize: 11, color: "hsl(45,100%,50%)", fontWeight: 700 }}>
+        ⟳ Refreshing index...
+      </span>
+    );
+
+  if (state === "done")
+    return (
+      <span style={{ fontSize: 11, color: "hsl(130,60%,50%)", fontWeight: 700 }}>
+        ✓ Index refreshed
+      </span>
+    );
+
+  if (state === "error")
+    return (
+      <div>
+        <span style={{ fontSize: 11, color: "hsl(350,100%,65%)", fontWeight: 700 }}>✕ Failed</span>
+        {output && <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>{output.slice(0, 120)}</div>}
+      </div>
+    );
+
+  return (
+    <button
+      className="btn"
+      onClick={handleUpdate}
+      style={{ fontSize: 11, padding: "4px 10px" }}
+    >
+      ↻ Refresh Package Index
+    </button>
+  );
+}
+
 // ── Patch Now Button ──────────────────────────────────────────────────────────
-function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued, activeCommand }) {
+function PatchNowButton({
+  hostname,
+  pkg,
+  os,
+  onPatched,
+  alreadyQueued,
+  activeCommand,
+}) {
   const [state, setState] = useState(() => {
     if (activeCommand?.status === "pending") return "queued";
     if (activeCommand?.status === "running") return "patching";
@@ -69,13 +133,18 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued, activeCom
     if (state !== "queued" || !commandId) return;
     const interval = setInterval(async () => {
       try {
-        const statusRes = await axios.get(`${API}/api/agent/commands/status/${commandId}`);
+        const statusRes = await axios.get(
+          `${API}/api/agent/commands/status/${commandId}`,
+        );
         const cmd = statusRes.data?.command;
         if (cmd?.status === "success") {
           clearInterval(interval);
           setState("done");
           setOutput(`✓ Installed — restart ${hostname} to apply`);
-          setTimeout(() => { setState("idle"); onPatched(); }, 8000);
+          setTimeout(() => {
+            setState("idle");
+            onPatched();
+          }, 8000);
         } else if (cmd?.status === "failed") {
           clearInterval(interval);
           setState("error");
@@ -92,7 +161,9 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued, activeCom
   // Windows needs a KB number
   if (isWindows && !pkg.match(/KB\d+/i)) {
     return (
-      <span style={{ fontSize: 10, color: "var(--muted)", fontStyle: "italic" }}>
+      <span
+        style={{ fontSize: 10, color: "var(--muted)", fontStyle: "italic" }}
+      >
         No KB
       </span>
     );
@@ -100,7 +171,9 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued, activeCom
 
   if (isWindows && alreadyQueued) {
     return (
-      <span style={{ fontSize: 10, color: "hsl(45,100%,50%)", fontWeight: 700 }}>
+      <span
+        style={{ fontSize: 10, color: "hsl(45,100%,50%)", fontWeight: 700 }}
+      >
         ⏳ Pending restart
       </span>
     );
@@ -114,7 +187,7 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued, activeCom
     if (!window.confirm(confirmMsg)) return;
     setState("patching");
     setOutput("");
-    await new Promise(r => setTimeout(r, 400));
+    await new Promise((r) => setTimeout(r, 400));
 
     try {
       const res = await axios.post(`${API}/api/deploy/patch`, {
@@ -126,7 +199,10 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued, activeCom
         setOutput(res.data.output || "");
         if (!isWindows) {
           setState("done");
-          setTimeout(() => { setState("idle"); onPatched(); }, 5000);
+          setTimeout(() => {
+            setState("idle");
+            onPatched();
+          }, 5000);
         } else {
           setState("queued");
           const newCommandId = res.data.commandId;
@@ -146,7 +222,14 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued, activeCom
 
   if (state === "patching")
     return (
-      <span style={{ fontSize: 10, color: "hsl(45,100%,50%)", fontWeight: 700, whiteSpace: "nowrap" }}>
+      <span
+        style={{
+          fontSize: 10,
+          color: "hsl(45,100%,50%)",
+          fontWeight: 700,
+          whiteSpace: "nowrap",
+        }}
+      >
         ⟳ Patching...
       </span>
     );
@@ -154,39 +237,74 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued, activeCom
   if (state === "queued")
     return (
       <div>
-        <span style={{ fontSize: 10, color: "hsl(210,100%,60%)", fontWeight: 700 }}>
+        <span
+          style={{ fontSize: 10, color: "hsl(210,100%,60%)", fontWeight: 700 }}
+        >
           ⟳ Agent installing...
         </span>
         {output && (
-          <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2, maxWidth: 220, wordBreak: "break-word" }}>
+          <div
+            style={{
+              fontSize: 10,
+              color: "var(--muted)",
+              marginTop: 2,
+              maxWidth: 220,
+              wordBreak: "break-word",
+            }}
+          >
             {output.slice(0, 100)}
           </div>
         )}
       </div>
     );
 
- if (state === "done")
+  if (state === "done")
     return (
       <div>
-        <span style={{ fontSize: 10, color: "hsl(45,100%,50%)", fontWeight: 700 }}>
+        <span
+          style={{ fontSize: 10, color: "hsl(45,100%,50%)", fontWeight: 700 }}
+        >
           {isWindows ? "⏳ Pending restart" : "✓ Done"}
         </span>
         {output && (
-          <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2, maxWidth: 220, wordBreak: "break-word" }}>
+          <div
+            style={{
+              fontSize: 10,
+              color: "var(--muted)",
+              marginTop: 2,
+              maxWidth: 220,
+              wordBreak: "break-word",
+            }}
+          >
             {output.slice(0, 100)}
           </div>
         )}
         {isWindows && hostname.toLowerCase() !== "dc1" && (
           <button
             className="btn"
-            style={{ fontSize: 10, padding: "3px 8px", marginTop: 6, color: "hsl(350,100%,65%)", borderColor: "hsla(350,100%,65%,0.3)" }}
+            style={{
+              fontSize: 10,
+              padding: "3px 8px",
+              marginTop: 6,
+              color: "hsl(350,100%,65%)",
+              borderColor: "hsla(350,100%,65%,0.3)",
+            }}
             onClick={async () => {
-              if (!window.confirm(`Restart ${hostname} now?\n\nThe machine will restart in 60 seconds. Any unsaved work will be lost.`)) return;
+              if (
+                !window.confirm(
+                  `Restart ${hostname} now?\n\nThe machine will restart in 60 seconds. Any unsaved work will be lost.`,
+                )
+              )
+                return;
               try {
-                const res = await axios.post(`${API}/api/deploy/restart`, { hostname });
+                const res = await axios.post(`${API}/api/deploy/restart`, {
+                  hostname,
+                });
                 if (res.data?.ok) {
                   setState("restarting");
-                  setOutput("Restart scheduled — machine will restart in 60 seconds");
+                  setOutput(
+                    "Restart scheduled — machine will restart in 60 seconds",
+                  );
                 } else {
                   alert(res.data?.error || "Restart failed");
                 }
@@ -201,10 +319,12 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued, activeCom
       </div>
     );
 
-    if (state === "restarting")
+  if (state === "restarting")
     return (
       <div>
-        <span style={{ fontSize: 10, color: "hsl(350,100%,65%)", fontWeight: 700 }}>
+        <span
+          style={{ fontSize: 10, color: "hsl(350,100%,65%)", fontWeight: 700 }}
+        >
           ↺ Restarting...
         </span>
         <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>
@@ -216,11 +336,21 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued, activeCom
   if (state === "error")
     return (
       <div>
-        <span style={{ fontSize: 10, color: "hsl(350,100%,65%)", fontWeight: 700 }}>
+        <span
+          style={{ fontSize: 10, color: "hsl(350,100%,65%)", fontWeight: 700 }}
+        >
           ✕ Failed
         </span>
         {output && (
-          <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2, maxWidth: 200, wordBreak: "break-word" }}>
+          <div
+            style={{
+              fontSize: 10,
+              color: "var(--muted)",
+              marginTop: 2,
+              maxWidth: 200,
+              wordBreak: "break-word",
+            }}
+          >
             {output.slice(0, 120)}
           </div>
         )}
@@ -235,7 +365,9 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued, activeCom
         fontSize: 11,
         padding: "4px 10px",
         background: isWindows ? "hsla(210,100%,60%,0.1)" : "transparent",
-        border: isWindows ? "1px solid hsla(210,100%,60%,0.3)" : "1px solid var(--line)",
+        border: isWindows
+          ? "1px solid hsla(210,100%,60%,0.3)"
+          : "1px solid var(--line)",
         color: isWindows ? "hsl(210,100%,60%)" : "hsl(130,60%,50%)",
       }}
     >
@@ -296,7 +428,7 @@ export default function Backlog() {
           score: null,
           priority: "Low",
         };
-       map.set(hostname, {
+        map.set(hostname, {
           hostname,
           os,
           latestCollectedAt: collectedAt,
@@ -648,6 +780,7 @@ export default function Backlog() {
                             <div className="muted" style={{ fontSize: 13 }}>
                               Missing items ({g.missingCount})
                             </div>
+                            {isLin && <AptUpdateButton hostname={g.hostname} />}
                             {isLin && g.missingCount > 0 && (
                               <div
                                 style={{ fontSize: 11, color: "var(--muted)" }}
@@ -667,7 +800,8 @@ export default function Backlog() {
                                 <strong style={{ color: "hsl(210,100%,60%)" }}>
                                   Patch Now
                                 </strong>{" "}
-                                sends install command to local agent on {g.hostname}
+                                sends install command to local agent on{" "}
+                                {g.hostname}
                               </div>
                             )}
                           </div>
@@ -714,8 +848,14 @@ export default function Backlog() {
                                     pkg={item}
                                     os={g.os}
                                     onPatched={load}
-                                    alreadyQueued={(g.pendingRestart || []).includes(item)}
-                                    activeCommand={g.activeCommands[item.split("/")[0].trim()]}
+                                    alreadyQueued={(
+                                      g.pendingRestart || []
+                                    ).includes(item)}
+                                    activeCommand={
+                                      g.activeCommands[
+                                        item.split("/")[0].trim()
+                                      ]
+                                    }
                                   />
                                 </div>
                               ))}

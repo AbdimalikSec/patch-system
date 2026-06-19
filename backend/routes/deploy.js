@@ -311,4 +311,35 @@ router.post("/restart", async (req, res) => {
   }
 });
 
+// ── POST /api/deploy/apt-update ───────────────────────────────────────────────
+router.post("/apt-update", async (req, res) => {
+  const { hostname } = req.body;
+  if (!hostname) return res.status(400).json({ ok: false, error: "hostname required" });
+
+  const hostKey = hostname.toLowerCase();
+  if (!SSH_CONFIG[hostKey]) {
+    return res.status(400).json({ ok: false, error: `No SSH config for ${hostname}` });
+  }
+
+  const ssh = new NodeSSH();
+  try {
+    await ssh.connect(SSH_CONFIG[hostKey]);
+    const result = await ssh.execCommand(
+      `echo 'password' | sudo -S apt-get update 2>&1`,
+      { timeout: 120000 }
+    );
+    ssh.dispose();
+    const success = result.code === 0 || (result.stdout || "").includes("Reading package lists");
+    return res.json({
+      ok: success,
+      hostname,
+      output: (result.stdout + result.stderr).slice(0, 500),
+      message: success ? "Package index refreshed successfully" : "apt-get update may have failed",
+    });
+  } catch (e) {
+    try { ssh.dispose(); } catch {}
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 module.exports = router;
