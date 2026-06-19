@@ -58,10 +58,32 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued, activeCom
     return "idle";
   });
   const [output, setOutput] = useState(activeCommand?.output || "");
- 
+  const [commandId, setCommandId] = useState(activeCommand?.commandId || null);
 
   const isWindows = (os || "").toLowerCase() === "windows";
   const isLinux = (os || "").toLowerCase() === "linux";
+
+  // Resume polling if user navigated away and came back mid-install
+  useEffect(() => {
+    if (state !== "queued" || !commandId) return;
+    const interval = setInterval(async () => {
+      try {
+        const statusRes = await axios.get(`${API}/api/agent/commands/status/${commandId}`);
+        const cmd = statusRes.data?.command;
+        if (cmd?.status === "success") {
+          clearInterval(interval);
+          setState("done");
+          setOutput(`✓ Installed — restart ${hostname} to apply`);
+          setTimeout(() => { setState("idle"); onPatched(); }, 8000);
+        } else if (cmd?.status === "failed") {
+          clearInterval(interval);
+          setState("error");
+          setOutput(cmd.output || "Installation failed");
+        }
+      } catch {}
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [commandId, state]);
 
   // Only show for supported assets
   if (!isLinux && !isWindows) return null;
@@ -69,15 +91,13 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued, activeCom
   // Windows needs a KB number
   if (isWindows && !pkg.match(/KB\d+/i)) {
     return (
-      <span
-        style={{ fontSize: 10, color: "var(--muted)", fontStyle: "italic" }}
-      >
+      <span style={{ fontSize: 10, color: "var(--muted)", fontStyle: "italic" }}>
         No KB
       </span>
     );
   }
-  
-    if (isWindows && alreadyQueued) {
+
+  if (isWindows && alreadyQueued) {
     return (
       <span style={{ fontSize: 10, color: "hsl(45,100%,50%)", fontWeight: 700 }}>
         ⏳ Pending restart
@@ -103,32 +123,16 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued, activeCom
 
       if (res.data?.ok) {
         setOutput(res.data.output || "");
-          if (!isWindows) {
+        if (!isWindows) {
           setState("done");
           setTimeout(() => { setState("idle"); onPatched(); }, 5000);
         } else {
           setState("queued");
-          const commandId = res.data.commandId;
-          if (commandId) {
-            const interval = setInterval(async () => {
-              try {
-                const statusRes = await axios.get(`${API}/api/agent/commands/status/${commandId}`);
-                const cmd = statusRes.data?.command;
-                if (cmd?.status === "success") {
-                  clearInterval(interval);
-                  setState("done");
-                  setOutput(`✓ Installed — restart ${hostname} to apply`);
-                  setTimeout(() => { setState("idle"); onPatched(); }, 8000);
-                } else if (cmd?.status === "failed") {
-                  clearInterval(interval);
-                  setState("error");
-                  setOutput(cmd.output || "Installation failed");
-                }
-              } catch {}
-            }, 10000);
+          const newCommandId = res.data.commandId;
+          if (newCommandId) {
+            setCommandId(newCommandId);
           }
         }
-        // Windows stays on "done/queued" — restart required to apply
       } else {
         setState("error");
         setOutput(res.data?.output || res.data?.error || "Unknown error");
@@ -139,14 +143,14 @@ function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued, activeCom
     }
   }
 
-   if (state === "patching")
+  if (state === "patching")
     return (
       <span style={{ fontSize: 10, color: "hsl(45,100%,50%)", fontWeight: 700, whiteSpace: "nowrap" }}>
         ⟳ Patching...
       </span>
     );
 
-if (state === "queued")
+  if (state === "queued")
     return (
       <div>
         <span style={{ fontSize: 10, color: "hsl(210,100%,60%)", fontWeight: 700 }}>
@@ -160,48 +164,62 @@ if (state === "queued")
       </div>
     );
 
-  if (state === "done")
+ if (state === "done")
     return (
       <div>
-        <span
-          style={{ fontSize: 10, color: "hsl(45,100%,50%)", fontWeight: 700 }}
-        >
+        <span style={{ fontSize: 10, color: "hsl(45,100%,50%)", fontWeight: 700 }}>
           {isWindows ? "⏳ Pending restart" : "✓ Done"}
         </span>
         {output && (
-          <div
-            style={{
-              fontSize: 10,
-              color: "var(--muted)",
-              marginTop: 2,
-              maxWidth: 220,
-              wordBreak: "break-word",
-            }}
-          >
+          <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2, maxWidth: 220, wordBreak: "break-word" }}>
             {output.slice(0, 100)}
           </div>
         )}
+        {isWindows && hostname.toLowerCase() !== "dc1" && (
+          <button
+            className="btn"
+            style={{ fontSize: 10, padding: "3px 8px", marginTop: 6, color: "hsl(350,100%,65%)", borderColor: "hsla(350,100%,65%,0.3)" }}
+            onClick={async () => {
+              if (!window.confirm(`Restart ${hostname} now?\n\nThe machine will restart in 60 seconds. Any unsaved work will be lost.`)) return;
+              try {
+                const res = await axios.post(`${API}/api/deploy/restart`, { hostname });
+                if (res.data?.ok) {
+                  setState("restarting");
+                  setOutput("Restart scheduled — machine will restart in 60 seconds");
+                } else {
+                  alert(res.data?.error || "Restart failed");
+                }
+              } catch (e) {
+                alert(e?.response?.data?.error || e.message);
+              }
+            }}
+          >
+            ↺ Restart Now
+          </button>
+        )}
+      </div>
+    );
+
+    if (state === "restarting")
+    return (
+      <div>
+        <span style={{ fontSize: 10, color: "hsl(350,100%,65%)", fontWeight: 700 }}>
+          ↺ Restarting...
+        </span>
+        <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>
+          Machine will restart in 60 seconds
+        </div>
       </div>
     );
 
   if (state === "error")
     return (
       <div>
-        <span
-          style={{ fontSize: 10, color: "hsl(350,100%,65%)", fontWeight: 700 }}
-        >
+        <span style={{ fontSize: 10, color: "hsl(350,100%,65%)", fontWeight: 700 }}>
           ✕ Failed
         </span>
         {output && (
-          <div
-            style={{
-              fontSize: 10,
-              color: "var(--muted)",
-              marginTop: 2,
-              maxWidth: 200,
-              wordBreak: "break-word",
-            }}
-          >
+          <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2, maxWidth: 200, wordBreak: "break-word" }}>
             {output.slice(0, 120)}
           </div>
         )}
@@ -210,21 +228,14 @@ if (state === "queued")
 
   return (
     <button
+      className="btn"
       onClick={handlePatch}
       style={{
-        padding: "3px 10px",
-        borderRadius: 5,
         fontSize: 11,
-        cursor: "pointer",
-        background: isWindows
-          ? "hsla(210,100%,60%,0.12)"
-          : "hsla(130,60%,50%,0.12)",
-        border: isWindows
-          ? "1px solid hsla(210,100%,60%,0.4)"
-          : "1px solid hsla(130,60%,50%,0.4)",
+        padding: "4px 10px",
+        background: isWindows ? "hsla(210,100%,60%,0.1)" : "transparent",
+        border: isWindows ? "1px solid hsla(210,100%,60%,0.3)" : "1px solid var(--line)",
         color: isWindows ? "hsl(210,100%,60%)" : "hsl(130,60%,50%)",
-        fontWeight: 700,
-        whiteSpace: "nowrap",
       }}
     >
       ▶ Patch Now

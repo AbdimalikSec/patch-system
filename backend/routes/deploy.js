@@ -279,4 +279,36 @@ router.get("/status/:hostname", async (req, res) => {
   });
 });
 
+// ── POST /api/deploy/restart ─────────────────────────────────────────────────
+router.post("/restart", requireAuth, async (req, res) => {
+  try {
+    const { hostname } = req.body;
+    if (!hostname) return res.status(400).json({ ok: false, error: "hostname required" });
+
+    // Block restart on DC1 — it's a domain controller
+    if (hostname.toLowerCase() === "dc1") {
+      return res.status(403).json({
+        ok: false,
+        error: "Restart not allowed on DC1 (Domain Controller). Schedule manually during maintenance window.",
+      });
+    }
+
+    const AgentCommand = require("../models/AgentCommand");
+    const cmd = await AgentCommand.create({
+      hostname,
+      kb: "RESTART",
+      type: "restart",
+    });
+
+    return res.json({
+      ok: true,
+      hostname,
+      commandId: cmd._id.toString(),
+      message: `Restart command queued for ${hostname}. Machine will restart in 60 seconds.`,
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 module.exports = router;
