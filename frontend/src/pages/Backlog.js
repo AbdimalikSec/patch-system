@@ -52,6 +52,7 @@ function rankPriority(p) {
 // ── Patch Now Button ──────────────────────────────────────────────────────────
 function PatchNowButton({ hostname, pkg, os, onPatched, alreadyQueued, activeCommand }) {
   const [state, setState] = useState(() => {
+    if (activeCommand?.status === "pending") return "queued";
     if (activeCommand?.status === "running") return "patching";
     if (activeCommand?.status === "success") return "done";
     if (activeCommand?.status === "failed") return "error";

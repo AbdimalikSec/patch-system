@@ -58,6 +58,7 @@ router.get("/patches/backlog", async (req, res) => {
     const recentCutoff = new Date(Date.now() - 10 * 60 * 1000); // last 10 min
     const activeCommands = await AgentCommand.find({
       $or: [
+        { status: "pending" },
         { status: "running" },
         { status: "success" },
         { status: "failed", completedAt: { $gte: recentCutoff } },
