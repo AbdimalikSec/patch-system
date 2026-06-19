@@ -3,6 +3,7 @@ const Asset = require("../models/Asset");
 const Patch = require("../models/Patch");
 const Compliance = require("../models/Compliance");
 const ComplianceCheck = require("../models/ComplianceCheck");
+const AgentCommand = require("../models/AgentCommand");
 
 function escapeRegex(str = "") {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
