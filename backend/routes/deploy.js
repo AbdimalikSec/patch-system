@@ -280,7 +280,7 @@ router.get("/status/:hostname", async (req, res) => {
 });
 
 // ── POST /api/deploy/restart ─────────────────────────────────────────────────
-router.post("/restart", requireAuth, async (req, res) => {
+router.post("/restart", async (req, res) => {
   try {
     const { hostname } = req.body;
     if (!hostname) return res.status(400).json({ ok: false, error: "hostname required" });
