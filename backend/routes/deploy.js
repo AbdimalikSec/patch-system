@@ -5,7 +5,7 @@ const { execSync } = require("child_process");
 // ── Asset configs ─────────────────────────────────────────────────────────────
 const SSH_CONFIG = {
   kali: {
-    host: "10.10.10.62",
+    host: "192.168.0.62",
     port: 22,
     username: "stager",
     privateKeyPath: "/home/patch/.ssh/patch_key",
@@ -14,12 +14,12 @@ const SSH_CONFIG = {
 
 const WINRM_CONFIG = {
   dc1: {
-    host: "10.10.20.10",
+    host: "192.168.0.10",
     username: "Administrator",
     password: "15422035s$",
   },
   "hq-staff-01": {
-    host: "10.10.10.60",
+    host: "192.168.0.60",
     username: "hqSaacid",
     password: "passwordS$",
   },

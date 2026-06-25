@@ -24,12 +24,6 @@
     "keywords": ["asset inventory", "hardware inventory", "software inventory", "usb storage", "removable storage", "removable media", "disable usb"]
   },
   {
-    "control": "6.8",
-    "title": "Information Security Event Reporting",
-    "domain": "6 — People Controls",
-    "keywords": ["event log", "security log", "log size", "log retention", "log full", "audit log storage", "system is disabled when audit", "audit logs are not automatically"]
-  },
-  {
     "control": "7.7",
     "title": "Clear Desk and Clear Screen",
     "domain": "7 — Physical Controls",

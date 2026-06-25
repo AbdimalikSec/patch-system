@@ -17,7 +17,7 @@ const axios = require("axios");
 const mongoose = require("mongoose");
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const INDEXER_URL = process.env.INDEXER_URL || "https://10.10.20.20:9200";
+const INDEXER_URL = process.env.INDEXER_URL || "https://192.168.0.20:9200";
 const INDEXER_USER = process.env.INDEXER_USER || "admin";
 const INDEXER_PASS = process.env.INDEXER_PASS || "Index3rPass+2026";
 const MONGO_URI =
