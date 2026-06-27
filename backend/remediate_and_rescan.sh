@@ -26,7 +26,7 @@
 
 set -euo pipefail
 
-WAZUH_API="https://10.10.20.20:55000"
+WAZUH_API="https://192.168.0.20:55000"
 WAZUH_USER="riskpatch-api"
 WAZUH_PASS="passwordsS3*"
 BACKEND_DIR="/opt/risk-patch-system/patch-system/backend"
