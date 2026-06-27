@@ -19,7 +19,7 @@ const WINRM_CONFIG = {
     password: "15422035s$",
   },
   "hq-staff-01": {
-    host: "192.168.0.60",
+    host: "192.168.0.50",
     username: "hqSaacid",
     password: "passwordS$",
   },
