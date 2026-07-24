@@ -18,6 +18,8 @@ import Machines from "./pages/Machines";
 import Vulnerabilities from "./pages/Vulnerabilities";
 import AuditLog from "./pages/AuditLog";
 import UserActivity from "./pages/UserActivity";
+import Profile from "./pages/Profile";
+
 export default function App() {
   return (
     <AuthProvider>
@@ -72,6 +74,9 @@ export default function App() {
           } />
           <Route path="/machines" element={
             <ProtectedRoute roles={["admin"]}><Machines /></ProtectedRoute>
+          } />
+         <Route path="/profile" element={
+             <ProtectedRoute roles={["admin", "analyst", "auditor"]}><Profile /></ProtectedRoute>
           } />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

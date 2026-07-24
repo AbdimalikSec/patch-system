@@ -64,6 +64,35 @@ router.get("/me", requireAuth, (req, res) => {
   res.json({ ok: true, user: req.user });
 });
 
+// PUT /api/auth/me/password — self-service password change (any logged-in user)
+router.put("/me/password", requireAuth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ ok: false, error: "Current and new password required" });
+    }
+
+    const pErr = validatePassword(newPassword);
+    if (pErr) return res.status(400).json({ ok: false, error: pErr });
+
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ ok: false, error: "User not found" });
+
+    const valid = await user.comparePassword(currentPassword);
+    if (!valid) {
+      return res.status(401).json({ ok: false, error: "Current password is incorrect" });
+    }
+
+    user.password = newPassword; // pre-save hook hashes this, same pattern as the admin edit route
+    await user.save();
+
+    res.json({ ok: true, message: "Password updated successfully" });
+  } catch (e) {
+    console.error("Change own password error:", e.message);
+    res.status(500).json({ ok: false, error: "server_error" });
+  }
+});
+
 // POST /api/auth/seed
 router.post("/seed", async (req, res) => {
   try {

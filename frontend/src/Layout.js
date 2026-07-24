@@ -532,6 +532,7 @@ export default function Layout({ title, rightControls, children }) {
           className="nav"
           style={{ overflowY: "auto", flex: 1, minHeight: 0 }}
         >
+        <NavItem to="/profile" label="My Profile" icon={ICONS.users} />
           {role === "auditor" ? (
             <NavItem
               to="/compliance"

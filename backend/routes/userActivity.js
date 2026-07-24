@@ -54,4 +54,31 @@ router.get("/", requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+// ── GET /api/user-activity/me — a user's own activity, no admin required ────
+router.get("/me", requireAuth, async (req, res) => {
+  try {
+    const username = req.user.username;
+    const records = await UserActivity.find({ username })
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
+
+    const logins = records.filter((r) => r.action === "login_success").length;
+    const failedLogins = records.filter((r) => r.action === "login_failed").length;
+    const actions = records.filter(
+      (r) => r.action !== "login_success" && r.action !== "login_failed"
+    ).length;
+    const lastLogin = records.find((r) => r.action === "login_success")?.createdAt || null;
+
+    res.json({
+      ok: true,
+      summary: { logins, failedLogins, actions, lastLogin },
+      data: records,
+    });
+  } catch (e) {
+    console.error("[user-activity/me]", e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 module.exports = router;
