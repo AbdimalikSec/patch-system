@@ -1,9 +1,9 @@
 const router = require("express").Router();
 const { NodeSSH } = require("node-ssh");
 const { execSync } = require("child_process");
-
+const Agent = require("../models/Agent");
 // ── Asset configs ─────────────────────────────────────────────────────────────
-const SSH_CONFIG = {
+let SSH_CONFIG = {
   kali: {
     host: "192.168.0.62",
     port: 22,
@@ -12,7 +12,7 @@ const SSH_CONFIG = {
   },
 };
 
-const WINRM_CONFIG = {
+let WINRM_CONFIG = {
   dc1: {
     host: "192.168.0.10",
     username: "Administrator",
@@ -23,7 +23,38 @@ const WINRM_CONFIG = {
     username: "hqSaacid",
     password: "passwordS$",
   },
+  "desktop-u7sean6":{
+    host: "192.168.0.102",
+    username: "hp",
+    password: "2122",
+ }
 };
+
+// Refresh configs from the database so DB-added machines work without code edits
+async function refreshConfigsFromDB() {
+  try {
+    const agents = await Agent.find({}).lean();
+    for (const a of agents) {
+      const key = a.hostname.toLowerCase();
+      if (a.os === "linux" && a.deployMethod === "ssh") {
+        SSH_CONFIG[key] = {
+          host: a.ip,
+          port: a.sshPort || 22,
+          username: a.username,
+          privateKeyPath: a.sshKeyPath,
+        };
+      } else if (a.os === "windows" && a.deployMethod === "winrm") {
+        WINRM_CONFIG[key] = {
+          host: a.ip,
+          username: a.username,
+          password: a.password,
+        };
+      }
+    }
+  } catch (e) {
+    console.error("[deploy] Could not refresh configs from DB:", e.message);
+  }
+}
 
 // ── Run PowerShell via pywinrm ────────────────────────────────────────────────
 function runPowerShell(config, psCommand) {
@@ -127,7 +158,7 @@ router.post("/patch", async (req, res) => {
       .status(400)
       .json({ ok: false, error: "hostname and package required" });
   }
-
+  await refreshConfigsFromDB();
   const hostKey = hostname.toLowerCase();
 
   // ── Linux (kali) via SSH ──────────────────────────────────────────────────
@@ -209,11 +240,12 @@ router.post("/patch", async (req, res) => {
       return res.status(500).json({ ok: false, error: e.message });
     }
   }
+// ── Windows via agent polling (works for ANY registered Windows machine) ────
+  const agentDoc = await Agent.findOne({
+    hostname: { $regex: new RegExp(`^${hostname}$`, "i") },
+  }).lean();
 
-  // ── Windows (DC1, HQ-staff-01) via pywinrm ───────────────────────────────
-  if (WINRM_CONFIG[hostKey]) {
-    const config = WINRM_CONFIG[hostKey];
-
+  if (WINRM_CONFIG[hostKey] || (agentDoc && agentDoc.os === "windows")) {
     const kbMatch = pkg.match(/KB\d+/i);
     if (!kbMatch) {
       return res.status(400).json({
@@ -243,6 +275,7 @@ router.post("/patch", async (req, res) => {
 
 // ── GET /api/deploy/status/:hostname ─────────────────────────────────────────
 router.get("/status/:hostname", async (req, res) => {
+  await refreshConfigsFromDB();
   const hostKey = req.params.hostname.toLowerCase();
 
   if (SSH_CONFIG[hostKey]) {
@@ -286,13 +319,15 @@ router.post("/restart", async (req, res) => {
     if (!hostname) return res.status(400).json({ ok: false, error: "hostname required" });
 
     // Block restart on DC1 — it's a domain controller
-    if (hostname.toLowerCase() === "dc1") {
+    // Block restart on servers / domain controllers based on their role
+    const agentDoc = await Agent.findOne({ hostname }).lean();
+    const blockedRoles = ["domain controller", "server"];
+    if (agentDoc && blockedRoles.includes((agentDoc.role || "").toLowerCase())) {
       return res.status(403).json({
         ok: false,
-        error: "Restart not allowed on DC1 (Domain Controller). Schedule manually during maintenance window.",
+        error: `Restart not allowed on ${hostname} (role: ${agentDoc.role}). Schedule manually during a maintenance window.`,
       });
     }
-
     const AgentCommand = require("../models/AgentCommand");
     const cmd = await AgentCommand.create({
       hostname,
@@ -315,7 +350,7 @@ router.post("/restart", async (req, res) => {
 router.post("/apt-update", async (req, res) => {
   const { hostname } = req.body;
   if (!hostname) return res.status(400).json({ ok: false, error: "hostname required" });
-
+  await refreshConfigsFromDB();
   const hostKey = hostname.toLowerCase();
   if (!SSH_CONFIG[hostKey]) {
     return res.status(400).json({ ok: false, error: `No SSH config for ${hostname}` });

@@ -6,6 +6,7 @@ import Layout from "../Layout";
 const API = process.env.REACT_APP_API_BASE || "http://localhost:5000";
 
 
+
 const DEFAULT_GROUPS = [
   {
     name: "Domain Infrastructure",
@@ -56,13 +57,14 @@ function ComplianceBar({ value }) {
   );
 }
 
-function GroupCard({ group, allAssets = [], onDelete, onRemoveMember, onAddMember }) {
+function GroupCard({ group, onDelete, onRemoveMember, onAddMember }) {
   const [expanded, setExpanded] = useState(true);
   const [addingAsset, setAddingAsset] = useState(false);
   const [selectedAdd, setSelectedAdd] = useState("");
   const s = group.stats || {};
   const pc = priorityColor(s.highestPriority);
-  const available = allAssets.filter(a => !group.members.includes(a));
+  const available = ALL_ASSETS.filter(a => !group.members.includes(a));
+
   return (
     <div style={{
       background: "var(--panel)", borderRadius: 12,
@@ -174,7 +176,7 @@ function GroupCard({ group, allAssets = [], onDelete, onRemoveMember, onAddMembe
 
 export default function AssetGroups() {
   const [groups, setGroups]         = useState([]);
-  const [allAssets, setAllAssets] = useState([]);
+  
   const [loading, setLoading]       = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast]           = useState(null);
@@ -186,16 +188,11 @@ export default function AssetGroups() {
     setTimeout(() => setToast(null), 3000);
   }
 
-async function load() {
+  async function load() {
     setLoading(true);
     try {
-      const [groupsRes, assetsRes] = await Promise.all([
-        axios.get(`${API}/api/groups`),
-        axios.get(`${API}/api/assets/overview`),
-      ]);
-      setGroups(groupsRes.data?.data || []);
-      const hostnames = (assetsRes.data?.data || []).map((a) => a.hostname);
-      setAllAssets(hostnames);
+      const res = await axios.get(`${API}/api/groups`);
+      setGroups(res.data?.data || []);
     } catch {
       showToast("err", "Failed to load groups");
     } finally {
@@ -384,7 +381,7 @@ async function load() {
       )}
 
       {!loading && groups.map(group => (
-        <GroupCard key={group._id} group={group} allAssets={allAssets}
+        <GroupCard key={group._id} group={group}
           onDelete={handleDelete} onRemoveMember={handleRemoveMember} onAddMember={handleAddMember} />
       ))}
 

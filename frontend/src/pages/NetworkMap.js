@@ -13,11 +13,10 @@ const EXPOSURE_CONFIG = {
 };
 
 const ZONE_CONFIG = {
-  internet: { label: "Internet Zone",     color: "hsl(350,100%,65%)", description: "Directly reachable from the public internet" },
-  dmz:      { label: "DMZ",              color: "hsl(25,100%,60%)",  description: "Partially exposed — perimeter network" },
-  staff:    { label: "Staff Network",     color: "hsl(45,100%,55%)",  description: "10.10.10.0/24 — HQ Staff endpoints" },
-  servers:  { label: "Servers Network",   color: "hsl(210,80%,60%)",  description: "10.10.20.0/24 — Core infrastructure" },
-  isolated: { label: "Isolated",          color: "hsl(130,60%,50%)",  description: "Air-gapped or restricted access" },
+  internet: { label: "Internet Zone",   color: "hsl(350,100%,65%)", description: "Directly reachable from the public internet" },
+  dmz:      { label: "DMZ",            color: "hsl(25,100%,60%)",  description: "Partially exposed — perimeter network" },
+  lan:      { label: "Local Network",   color: "hsl(210,80%,60%)",  description: "192.168.0.0/24 — TP-Link managed LAN" },
+  isolated: { label: "Isolated",        color: "hsl(130,60%,50%)",  description: "Air-gapped or restricted access" },
 };
 
 const RISK_COLOR = p => ({ Critical: "hsl(350,100%,65%)", High: "hsl(25,100%,60%)", Medium: "hsl(45,100%,50%)", Low: "hsl(130,60%,50%)" }[p] || "var(--muted)");
@@ -162,10 +161,6 @@ export default function NetworkMap() {
   const [riskData, setRiskData]     = useState({});
   const [loading, setLoading]       = useState(true);
   const [saving, setSaving]         = useState(null);
-  const { user }                    = (() => { try { return require("../context/AuthContext").useAuth(); } catch { return { user: null }; } })();
-
-  // Use useAuth properly
-  const [role, setRole] = useState("analyst");
 
   useEffect(() => {
     load();
@@ -203,12 +198,13 @@ export default function NetworkMap() {
   async function handleChangeExposure(hostname, newLevel) {
     setSaving(hostname);
     try {
-      const zoneMap = { internet: "internet", dmz: "dmz", internal: "servers", isolated: "isolated" };
+      // Map exposure level to a network zone for display grouping
+      const zoneMap = { internet: "internet", dmz: "dmz", internal: "lan", isolated: "isolated" };
       await axios.patch(`${API}/api/meta/${hostname}/exposure`, {
         exposureLevel: newLevel,
-        networkZone: zoneMap[newLevel] || "servers",
+        networkZone: zoneMap[newLevel] || "lan",
       });
-      setMetas(prev => prev.map(m => m.hostname === hostname ? { ...m, exposureLevel: newLevel, networkZone: zoneMap[newLevel] || "servers" } : m));
+      setMetas(prev => prev.map(m => m.hostname === hostname ? { ...m, exposureLevel: newLevel, networkZone: zoneMap[newLevel] || "lan" } : m));
     } catch (e) {
       console.error("Exposure update error:", e);
     } finally {
@@ -216,16 +212,21 @@ export default function NetworkMap() {
     }
   }
 
-  // Group assets by networkZone
+  // Group assets by networkZone — fall back to exposure level if zone missing
   const zoneGroups = {};
   for (const meta of metas) {
-    const zone = meta.networkZone || "servers";
+    // Prefer explicit networkZone, else derive from exposureLevel, else lan
+    let zone = meta.networkZone;
+    if (!zone || !["internet", "dmz", "lan", "isolated"].includes(zone)) {
+      const expToZone = { internet: "internet", dmz: "dmz", internal: "lan", isolated: "isolated" };
+      zone = expToZone[meta.exposureLevel] || "lan";
+    }
     if (!zoneGroups[zone]) zoneGroups[zone] = [];
     zoneGroups[zone].push(meta);
   }
 
   // Zone render order — top to bottom represents internet → internal
-  const zoneOrder = ["internet", "dmz", "staff", "servers", "isolated"];
+  const zoneOrder = ["internet", "dmz", "lan", "isolated"];
 
   // Stats
   const internetFacing = metas.filter(m => m.exposureLevel === "internet").length;
@@ -289,11 +290,11 @@ export default function NetworkMap() {
                 <div style={{ fontSize: 11, color: "var(--muted)" }}>Attack surface visible to external threats — exposure multiplier 1.0×</div>
               </div>
               <div style={{ marginLeft: "auto", fontSize: 11, color: "var(--muted)" }}>
-                pfSense NAT: 192.168.56.2 → internal hosts
+                Internet via phone tethering → router WAN
               </div>
             </div>
 
-            {/* pfSense firewall indicator */}
+            {/* Router / gateway indicator */}
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "center",
               gap: 16, padding: "12px",
@@ -304,9 +305,9 @@ export default function NetworkMap() {
                 background: "var(--panel)", border: "1px solid var(--line)",
                 fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 8,
               }}>
-                <span>🔥</span>
-                <span>pfSense Firewall</span>
-                <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 400 }}>192.168.56.2 · Stateful Inspection · NAT</span>
+                <span>📶</span>
+                <span>TP-Link Archer C20 Router</span>
+                <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 400 }}>192.168.0.1 · DHCP Reservations · NAT Gateway</span>
               </div>
               <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
             </div>
@@ -340,8 +341,8 @@ export default function NetworkMap() {
 
               <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 8 }}>
                 {[
-                  { name: "PATCH-SRV", ip: "10.10.20.30", role: "Backend + MongoDB + Collectors", icon: "⚙️" },
-                  { name: "Wazuh Manager", ip: "10.10.20.20", role: "SIEM + OpenSearch + SCA", icon: "👁️" },
+                  { name: "PATCH-SRV", ip: "192.168.0.30", role: "Backend + MongoDB + Collectors + Dashboard", icon: "⚙️" },
+                  { name: "Wazuh Manager", ip: "192.168.0.20", role: "SIEM + OpenSearch + SCA", icon: "👁️" },
                 ].map(node => (
                   <div key={node.name} style={{
                     background: "var(--panel)", border: "1px solid var(--line)",

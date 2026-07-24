@@ -20,17 +20,16 @@ const mongoose = require("mongoose");
 const INDEXER_URL = process.env.INDEXER_URL || "https://192.168.0.20:9200";
 const INDEXER_USER = process.env.INDEXER_USER || "admin";
 const INDEXER_PASS = process.env.INDEXER_PASS || "Index3rPass+2026";
+const WAZUH_API_URL = process.env.WAZUH_API_URL || "https://192.168.0.20:55000";
+const WAZUH_API_USER = process.env.WAZUH_API_USER || "riskpatch-api";
+const WAZUH_API_PASS = process.env.WAZUH_API_PASS || "passwordsS3*";
 const MONGO_URI =
   process.env.MONGO_URI || "mongodb://127.0.0.1:27017/riskpatch";
 const INDEX = "wazuh-alerts-4.x-*";
 
 // Agent id → hostname mapping — keeps queries fast and avoids duplicate names.
 // Add every agent you have here. id is the Wazuh agent id (string, zero-padded).
-const AGENTS = [
-  { id: "001", hostname: "DC1" },
-  { id: "004", hostname: "HQ-staff-01" },
-  { id: "005", hostname: "kali" },
-];
+const Agent = require("./models/Agent");
 
 // ── Axios instance (skip TLS verification — lab environment) ──────────────────
 const client = axios.create({
@@ -42,6 +41,56 @@ const client = axios.create({
 
 // ── Mongoose model (loaded after DB connect) ──────────────────────────────────
 let ComplianceCheck;
+
+// ── Auto-link DB machines to their Wazuh agent ID by hostname ─────────────────
+async function autoLinkAgents() {
+  try {
+    // Get a Wazuh manager API token
+    const wazuhClient = axios.create({
+      baseURL: WAZUH_API_URL,
+      httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+      timeout: 15000,
+    });
+    const basic = Buffer.from(`${WAZUH_API_USER}:${WAZUH_API_PASS}`).toString("base64");
+    const tokenRes = await wazuhClient.post("/security/user/authenticate", null, {
+      headers: { Authorization: `Basic ${basic}` },
+    });
+    const token = tokenRes.data?.data?.token;
+    if (!token) {
+      console.log("[!] Could not get Wazuh token for auto-link");
+      return;
+    }
+
+    // Get all agents from Wazuh (id + name)
+    const agentsRes = await wazuhClient.get("/agents?limit=500", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const wazuhAgents = agentsRes.data?.data?.affected_items || [];
+
+    // Match each DB machine to its Wazuh agent by hostname (case-insensitive)
+    const dbMachines = await Agent.find({}).lean();
+    let linked = 0;
+    for (const m of dbMachines) {
+      const match = wazuhAgents.find(
+        (wa) => (wa.name || "").toLowerCase() === m.hostname.toLowerCase()
+      );
+      if (match && match.id !== "000") {
+        // Update if wazuhId is missing/wrong or not yet enrolled
+        if (m.wazuhId !== match.id || !m.enrolled) {
+          await Agent.updateOne(
+            { _id: m._id },
+            { wazuhId: match.id, enrolled: true }
+          );
+          console.log(`[+] Auto-linked ${m.hostname} → Wazuh ID ${match.id} (enrolled)`);
+          linked++;
+        }
+      }
+    }
+    if (linked === 0) console.log("[*] Auto-link: all machines already linked");
+  } catch (e) {
+    console.log(`[!] Auto-link failed: ${e.message}`);
+  }
+}
 
 // ── Pull all SCA checks for one agent via scroll ──────────────────────────────
 async function fetchChecksForAgent(agentId) {
@@ -129,9 +178,16 @@ async function upsertChecks(hostname, agentId, normalisedChecks) {
       { result: 1 },
     ).lean();
 
-    const resultChanged = !existing || existing.result !== c.result;
-    const update = resultChanged ? { ...c, statusChangedAt: new Date() } : c;
-
+// Only stamp statusChangedAt on a GENUINE transition of an existing check,
+    // not when a check is seen for the first time (baseline). This prevents
+    // first-time-seen failures (e.g. a newly added machine) from being flagged
+    // as "new failures since login".
+    const isTransition = existing && existing.result !== c.result;
+    const update = isTransition
+      ? { ...c, statusChangedAt: new Date() }
+      : existing
+      ? c // existing, no change — leave statusChangedAt as-is
+      : { ...c, statusChangedAt: new Date(0) }; // first-time baseline — old timestamp so it's not "new"
     await ComplianceCheck.findOneAndUpdate(
       { assetHostname: c.assetHostname, checkId: c.checkId },
       update,
@@ -145,10 +201,18 @@ async function upsertChecks(hostname, agentId, normalisedChecks) {
 // ── Main ──────────────────────────────────────────────────────────────────────
 (async () => {
   try {
-    console.log("[*] Connecting to MongoDB:", MONGO_URI);
-    await mongoose.connect(MONGO_URI);
+    console.log("[*] Connecting to MongoDB:", MONGO_URI); 
+   await mongoose.connect(MONGO_URI);
     ComplianceCheck = require("./models/ComplianceCheck");
-    console.log("[+] MongoDB connected.");
+     console.log("[+] MongoDB connected.");
+
+    // Auto-link any newly-enrolled machines to their Wazuh agent ID
+    await autoLinkAgents();
+
+    // Load agents from the database (only enrolled ones with a Wazuh id)
+    const dbAgents = await Agent.find({ wazuhId: { $ne: "" } }).lean();
+    const AGENTS = dbAgents.map(a => ({ id: a.wazuhId, hostname: a.hostname }));
+    console.log(`[*] Loaded ${AGENTS.length} agents from database`);
 
     for (const agent of AGENTS) {
       console.log(`\n[*] Processing agent ${agent.id} (${agent.hostname})...`);

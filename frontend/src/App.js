@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
-
+import PatchLog     from "./pages/PatchLog";
 import Login        from "./pages/Login";
 import Overview     from "./pages/Overview";
 import Assets       from "./pages/Assets";
@@ -13,6 +13,9 @@ import Users        from "./pages/Users";
 import NetworkMap   from "./pages/NetworkMap";
 import AssetGroups  from "./pages/AssetGroups";
 import Tickets from "./pages/Tickets";
+import NetworkDiscovery from "./pages/NetworkDiscovery";
+import Machines from "./pages/Machines";
+import Vulnerabilities from "./pages/Vulnerabilities";
 
 export default function App() {
   return (
@@ -48,8 +51,20 @@ export default function App() {
           <Route path="/tickets" element={
             <ProtectedRoute roles={["admin", "analyst", "auditor"]}><Tickets /></ProtectedRoute>
           } />
+            <Route path="/patch-log" element={
+             <ProtectedRoute roles={["admin", "analyst"]}><PatchLog /></ProtectedRoute>
+          } />
+           <Route path="/vulnerabilities" element={
+             <ProtectedRoute roles={["admin", "analyst"]}><Vulnerabilities /></ProtectedRoute>
+          } />
+            <Route path="/discovery" element={
+             <ProtectedRoute roles={["admin", "analyst"]}><NetworkDiscovery /></ProtectedRoute>
+          } />
           <Route path="/users" element={
             <ProtectedRoute roles={["admin"]}><Users /></ProtectedRoute>
+          } />
+          <Route path="/machines" element={
+            <ProtectedRoute roles={["admin"]}><Machines /></ProtectedRoute>
           } />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

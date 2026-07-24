@@ -552,20 +552,25 @@ export default function Layout({ title, rightControls, children }) {
                 label="Compliance"
                 icon={ICONS.compliance}
               />
+              <NavItem to="/vulnerabilities" label="Vulnerabilities" icon={ICONS.compliance} />
               <NavItem to="/network" label="Network Map" icon={ICONS.network} />
               <NavItem to="/tickets" label="Tickets" icon={ICONS.tickets} />
+              <NavItem to="/patch-log" label="Patch Log" icon={ICONS.evaluation} />
               <NavItem to="/groups" label="Asset Groups" icon={ICONS.groups} />
-              <NavItem
-                to="/evaluation"
-                label="Evaluation"
-                icon={ICONS.evaluation}
-              />
+              <NavItem to="/discovery" label="Device Discovery" icon={ICONS.network} />
               {role === "admin" && (
-                <NavItem
-                  to="/users"
-                  label="User Management"
-                  icon={ICONS.users}
-                />
+                <>
+                  <NavItem
+                    to="/machines"
+                    label="Machines"
+                    icon={ICONS.assets}
+                  />
+                  <NavItem
+                    to="/users"
+                    label="User Management"
+                    icon={ICONS.users}
+                  />
+                </>
               )}
             </>
           )}

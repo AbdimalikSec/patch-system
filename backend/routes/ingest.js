@@ -46,7 +46,7 @@ router.post("/patch", async (req, res) => {
         $set: {
           assetHostname,
           os,
-          missingCount: missingCount ?? incomingMissing.length,
+          missingCount: incomingMissing.length,
           missing: incomingMissing,
           raw: raw || req.body,
           collectedAt: new Date(),
