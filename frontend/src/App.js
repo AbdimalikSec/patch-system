@@ -16,7 +16,8 @@ import Tickets from "./pages/Tickets";
 import NetworkDiscovery from "./pages/NetworkDiscovery";
 import Machines from "./pages/Machines";
 import Vulnerabilities from "./pages/Vulnerabilities";
-
+import AuditLog from "./pages/AuditLog";
+import UserActivity from "./pages/UserActivity";
 export default function App() {
   return (
     <AuthProvider>
@@ -56,6 +57,12 @@ export default function App() {
           } />
            <Route path="/vulnerabilities" element={
              <ProtectedRoute roles={["admin", "analyst"]}><Vulnerabilities /></ProtectedRoute>
+          } />
+           <Route path="/audit-log" element={
+             <ProtectedRoute roles={["admin", "analyst"]}><AuditLog /></ProtectedRoute>
+          } />
+           <Route path="/user-activity" element={
+              <ProtectedRoute roles={["admin"]}><UserActivity /></ProtectedRoute>
           } />
             <Route path="/discovery" element={
              <ProtectedRoute roles={["admin", "analyst"]}><NetworkDiscovery /></ProtectedRoute>

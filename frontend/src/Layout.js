@@ -558,6 +558,8 @@ export default function Layout({ title, rightControls, children }) {
               <NavItem to="/patch-log" label="Patch Log" icon={ICONS.evaluation} />
               <NavItem to="/groups" label="Asset Groups" icon={ICONS.groups} />
               <NavItem to="/discovery" label="Device Discovery" icon={ICONS.network} />
+              <NavItem to="/user-activity" label="User Activity" icon={ICONS.users} />
+              <NavItem to="/audit-log" label="Audit Log" icon={ICONS.users} />
               {role === "admin" && (
                 <>
                   <NavItem

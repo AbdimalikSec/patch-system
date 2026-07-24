@@ -2,14 +2,14 @@ const express  = require("express");
 const mongoose = require("mongoose");
 const cors     = require("cors");
 require("dotenv").config();
-
+const activityLogger = require("./middleware/activityLogger");
 const connectDB = require("./config/db");
 const { requireAuth } = require("./middleware/authMiddleware");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-
+app.use(activityLogger);
 connectDB();
 
 // ── Public routes ─────────────────────────────────────────────────────────────
@@ -33,6 +33,8 @@ app.use("/api/groups",        requireAuth, require("./routes/groups"));
 app.use("/api/agent",         require("./routes/agentCommands"));
 app.use("/api/tickets",       requireAuth, require("./routes/tickets"));
 app.use("/api/deploy",        requireAuth, require("./routes/deploy"));
+app.use("/api/audit-log", require("./routes/auditLog"));
 app.use("/api/discovery", require("./routes/discovery"));
+app.use("/api/user-activity", require("./routes/userActivity"));
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
