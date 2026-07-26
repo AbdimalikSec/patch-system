@@ -573,6 +573,10 @@ export default function Layout({ title, rightControls, children }) {
                     label="User Management"
                     icon={ICONS.users}
                   />
+                  <NavItem
+                    to="/system-ops" 
+                    label="System Operations" 
+                    icon={ICONS.evaluation} />
                 </>
               )}
             </>

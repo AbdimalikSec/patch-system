@@ -58,7 +58,7 @@ function AssetCard({ row, checks, loadingChecks, isAuditor }) {
   const status      = checksArr.length === 0 ? "No Data" : failedCount > 0 ? "Non-Compliant" : "Compliant";
   const displayed   = showAll ? failedArr : failedArr.slice(0, 5);
 
-  
+
 
   return (
     <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -172,7 +172,6 @@ function buildPDFHtml(exportRows, checksMap, kpis, title) {
       </div>`;
   }).join("");
 
-  // Summary KPIs — recalculate for the exported rows only
   const expFailed  = exportRows.reduce((s, r) => s + (checksMap[r.hostname] ?? []).filter(c => c.result === "failed").length, 0);
   const expPassed  = exportRows.reduce((s, r) => s + (checksMap[r.hostname] ?? []).filter(c => c.result === "passed").length, 0);
   const expTotal   = exportRows.reduce((s, r) => s + (checksMap[r.hostname] ?? []).length, 0);
@@ -218,6 +217,107 @@ function buildPDFHtml(exportRows, checksMap, kpis, title) {
   </div>
   <div style="font-size:18px;font-weight:800;margin-bottom:24px;padding-bottom:12px;border-bottom:1px solid #e5e5e5;">Asset Compliance Details</div>
   ${assetSections}
+  <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e5e5;font-size:11px;color:#999;text-align:center;">RiskPatch — Intelligent Risk-Based Patch Management & Compliance Framework · ${date}</div>
+</body></html>`;
+}
+
+function buildISOPDFHtml(exportRows, checksMap, title) {
+  const date = new Date().toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" });
+
+  // Collect all ISO-mapped checks across the selected hosts
+  const allChecks = [];
+  for (const row of exportRows) {
+    const checks = checksMap[row.hostname] ?? [];
+    for (const c of checks) {
+      if (c.iso27001) allChecks.push({ ...c, assetHostname: row.hostname });
+    }
+  }
+
+  const byDomain = {};
+  for (const c of allChecks) {
+    const domain = c.iso27001.domain;
+    if (!byDomain[domain]) byDomain[domain] = [];
+    byDomain[domain].push(c);
+  }
+  const domains = Object.keys(byDomain).sort();
+
+  const domainSections = domains.map(domain => {
+    const checks = byDomain[domain];
+    const failed = checks.filter(c => c.result === "failed");
+    const passed = checks.filter(c => c.result === "passed");
+    const score = checks.length > 0 ? Math.round((failed.length / checks.length) * 100) : 0;
+    const sc = failed.length > 0 ? "#dc2626" : "#16a34a";
+
+    const failedRows = failed.map(c => `
+      <tr>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:11px;color:#666;white-space:nowrap;">${c.iso27001.control}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;font-weight:600;">${c.title || "-"}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:11px;color:#666;">${c.assetHostname} · Check #${c.checkId}</td>
+      </tr>`).join("");
+
+    return `
+      <div style="margin-bottom:40px;page-break-inside:avoid;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:#f8f9fa;border-radius:8px;margin-bottom:16px;border-left:4px solid ${sc};">
+          <div>
+            <div style="font-size:18px;font-weight:800;">${domain}</div>
+            <div style="font-size:12px;color:#666;margin-top:4px;">${failed.length} failed · ${passed.length} passed · ${checks.length} mapped checks</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:28px;font-weight:900;color:${sc};">${score}%</div>
+            <div style="font-size:11px;font-weight:700;color:${sc};text-transform:uppercase;">${failed.length > 0 ? "Non-Compliant" : "Compliant"}</div>
+          </div>
+        </div>
+        ${failed.length === 0
+          ? `<div style="padding:16px;color:#16a34a;font-size:13px;">✓ No failed checks mapped to this domain.</div>`
+          : `<table style="width:100%;border-collapse:collapse;">
+              <thead><tr style="background:#f0f0f0;">
+                <th style="padding:8px 12px;text-align:left;font-size:11px;color:#666;text-transform:uppercase;width:100px;">Control</th>
+                <th style="padding:8px 12px;text-align:left;font-size:11px;color:#666;text-transform:uppercase;width:40%;">Title</th>
+                <th style="padding:8px 12px;text-align:left;font-size:11px;color:#666;text-transform:uppercase;">Asset / Check</th>
+              </tr></thead>
+              <tbody>${failedRows}</tbody>
+             </table>`
+        }
+      </div>`;
+  }).join("");
+
+  const totalFailed = allChecks.filter(c => c.result === "failed").length;
+  const totalPassed = allChecks.filter(c => c.result === "passed").length;
+  const totalChecks = allChecks.length;
+  const overallScore = totalChecks > 0 ? Math.round((totalPassed / totalChecks) * 100) : 0;
+  const scoreColor = overallScore >= 70 ? "#16a34a" : overallScore >= 40 ? "#d97706" : "#dc2626";
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>${title} — RiskPatch</title>
+<style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#111;padding:40px;max-width:1100px;margin:0 auto;}@media print{body{padding:20px;}.no-print{display:none;}}</style>
+</head><body>
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;padding-bottom:24px;border-bottom:2px solid #111;margin-bottom:32px;">
+    <div>
+      <div style="font-size:28px;font-weight:900;">🛡 RiskPatch</div>
+      <div style="font-size:14px;color:#666;margin-top:4px;">${title}</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:13px;color:#666;">Generated: ${date}</div>
+      <div style="font-size:13px;color:#666;margin-top:4px;">Assets covered: ${exportRows.length}</div>
+    </div>
+  </div>
+  <div class="no-print" style="margin-bottom:24px;">
+    <button onclick="window.print()" style="padding:10px 24px;background:#111;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">🖨 Print / Save as PDF</button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:32px;">
+    ${[
+      ["ISO Domains Covered", `${domains.length}`, "#111"],
+      ["Overall Score", `${overallScore}%`, scoreColor],
+      ["Total Failed", `${totalFailed}`, "#dc2626"],
+      ["Total Mapped Checks", `${totalChecks}`, "#111"],
+    ].map(([label, val, color]) => `
+      <div style="padding:16px 20px;background:#f8f9fa;border-radius:8px;border:1px solid #e5e5e5;">
+        <div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">${label}</div>
+        <div style="font-size:28px;font-weight:900;color:${color};">${val}</div>
+      </div>`).join("")}
+  </div>
+  <div style="font-size:18px;font-weight:800;margin-bottom:24px;padding-bottom:12px;border-bottom:1px solid #e5e5e5;">ISO 27001 Domain Compliance Details</div>
+  ${domainSections.length > 0 ? domainSections : `<div style="padding:40px;text-align:center;color:#999;">No ISO 27001 mapped checks found for the selected scope.</div>`}
   <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e5e5;font-size:11px;color:#999;text-align:center;">RiskPatch — Intelligent Risk-Based Patch Management & Compliance Framework · ${date}</div>
 </body></html>`;
 }
@@ -428,11 +528,21 @@ export default function Compliance() {
     const exportRows = exportTarget === "all"
       ? sortedFiltered
       : sortedFiltered.filter(r => r.hostname === exportTarget);
-    const title = exportTarget === "all"
-      ? "CIS Compliance Audit Report — All Assets"
-      : `CIS Compliance Report — ${exportTarget}`;
+
     const win = window.open("", "_blank");
-    win.document.write(buildPDFHtml(exportRows, checksMap, kpis, title));
+
+    if (framework === "iso") {
+      const title = exportTarget === "all"
+        ? "ISO 27001 Compliance Audit Report — All Assets"
+        : `ISO 27001 Compliance Report — ${exportTarget}`;
+      win.document.write(buildISOPDFHtml(exportRows, checksMap, title));
+    } else {
+      const title = exportTarget === "all"
+        ? "CIS Compliance Audit Report — All Assets"
+        : `CIS Compliance Report — ${exportTarget}`;
+      win.document.write(buildPDFHtml(exportRows, checksMap, kpis, title));
+    }
+
     win.document.close();
   }
 

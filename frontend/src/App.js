@@ -19,6 +19,7 @@ import Vulnerabilities from "./pages/Vulnerabilities";
 import AuditLog from "./pages/AuditLog";
 import UserActivity from "./pages/UserActivity";
 import Profile from "./pages/Profile";
+import SystemOperations from "./pages/SystemOperations";
 
 export default function App() {
   return (
@@ -68,6 +69,9 @@ export default function App() {
           } />
             <Route path="/discovery" element={
              <ProtectedRoute roles={["admin", "analyst"]}><NetworkDiscovery /></ProtectedRoute>
+          } />
+           <Route path="/system-ops" element={
+             <ProtectedRoute roles={["admin"]}><SystemOperations /></ProtectedRoute>
           } />
           <Route path="/users" element={
             <ProtectedRoute roles={["admin"]}><Users /></ProtectedRoute>

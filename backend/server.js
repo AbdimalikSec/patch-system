@@ -36,5 +36,6 @@ app.use("/api/deploy",        requireAuth, require("./routes/deploy"));
 app.use("/api/audit-log", require("./routes/auditLog"));
 app.use("/api/discovery", require("./routes/discovery"));
 app.use("/api/user-activity", require("./routes/userActivity"));
+app.use("/api/system-ops", require("./routes/systemOps"));
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

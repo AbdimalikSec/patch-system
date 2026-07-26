@@ -9,7 +9,12 @@ const https = require("https");
 const INDEXER_URL  = process.env.INDEXER_URL  || "https://192.168.0.20:9200";
 const INDEXER_USER = process.env.INDEXER_USER || "admin";
 const INDEXER_PASS = process.env.INDEXER_PASS || "Index3rPass+2026";
-const INDEX = "wazuh-alerts-4.x-*";
+
+// New Wazuh vulnerability module (v4.8+) stores current-state documents here —
+// each doc IS the latest state for one (agent, package, CVE) combination.
+// No @timestamp field exists on these docs, and no separate status field either;
+// unlike the old wazuh-alerts-4.x-* index this replaces.
+const INDEX = "wazuh-states-vulnerabilities-*";
 
 const client = axios.create({
   baseURL: INDEXER_URL,
@@ -18,19 +23,16 @@ const client = axios.create({
   timeout: 30000,
 });
 
-// ── Pull "Active" vulnerability-detector docs, optionally filtered by agent ──
+// ── Pull vulnerability state docs, optionally filtered by agent ─────────────
 async function fetchVulnDocs(agentId) {
-  const must = [
-    { term: { "rule.groups": "vulnerability-detector" } },
-    { term: { "data.vulnerability.status": "Active" } },
-  ];
+  const must = [];
   if (agentId) must.push({ term: { "agent.id": agentId } });
 
   const body = {
     size: 500,
-    _source: ["agent", "data.vulnerability", "@timestamp"],
-    query: { bool: { must } },
-    sort: [{ "@timestamp": "desc" }],
+    _source: ["agent", "package", "vulnerability"],
+    query: must.length ? { bool: { must } } : { match_all: {} },
+    sort: [{ "vulnerability.score.base": "desc" }],
   };
 
   const allDocs = [];
@@ -49,30 +51,18 @@ async function fetchVulnDocs(agentId) {
   return allDocs;
 }
 
-// ── De-duplicate: keep the newest doc per (agent + CVE) pair ────────────────
-function dedupe(docs) {
-  const map = new Map();
-  for (const doc of docs) {
-    const v = doc._source?.data?.vulnerability;
-    const agentId = doc._source?.agent?.id;
-    if (!v?.cve || !agentId) continue;
-    const key = `${agentId}:${v.cve}`;
-    if (!map.has(key)) map.set(key, doc); // sorted desc already — first = newest
-  }
-  return Array.from(map.values());
-}
-
 function normalise(doc) {
-  const v = doc._source.data.vulnerability;
+  const v = doc._source.vulnerability || {};
+  const pkg = doc._source.package || {};
   return {
-    cve: v.cve,
-    package: v.package?.name || "",
-    version: v.package?.version || "",
-    condition: v.package?.condition || "",
+    cve: v.id,
+    package: pkg.name || "",
+    version: pkg.version || "",
+    condition: v.scanner?.condition || "",
     severity: v.severity || "",
-    cvssScore: v.score?.base || v.cvss?.cvss3?.base_score || null,
-    published: v.published || null,
-    updated: v.updated || null,
+    cvssScore: v.score?.base ?? null,
+    published: v.published_at || null,
+    updated: v.detected_at || null,
     references: [v.reference, v.scanner?.reference].filter(Boolean),
   };
 }
@@ -80,31 +70,29 @@ function normalise(doc) {
 // ── GET /api/vulnerabilities/summary — CVE counts per enrolled machine ──────
 router.get("/summary", requireAuth, async (req, res) => {
   try {
-    const docs = dedupe(await fetchVulnDocs());
-    const agents = await Agent.find({}).lean();
-    const agentById = new Map(agents.map((a) => [a.wazuhId, a]));
+    const agents = await Agent.find({ wazuhId: { $ne: "" } }).lean();
 
+    // Start every enrolled machine at zero so a clean/unscanned machine still
+    // shows up on the page instead of silently vanishing from the list.
     const byHost = new Map();
+    for (const a of agents) {
+      byHost.set(a.wazuhId, {
+        hostname: a.hostname,
+        os: a.os,
+        critical: 0,
+        high: 0,
+        medium: 0,
+        low: 0,
+        total: 0,
+      });
+    }
+
+    const docs = await fetchVulnDocs();
     for (const doc of docs) {
       const agentId = doc._source.agent.id;
-      const agentName = doc._source.agent.name;
-      const a = agentById.get(agentId);
-      const hostname = a ? a.hostname : agentName;
-      const os = a ? a.os : "";
-
-      if (!byHost.has(hostname)) {
-        byHost.set(hostname, {
-          hostname,
-          os,
-          critical: 0,
-          high: 0,
-          medium: 0,
-          low: 0,
-          total: 0,
-        });
-      }
-      const g = byHost.get(hostname);
-      const sev = (doc._source.data.vulnerability.severity || "").toLowerCase();
+      const g = byHost.get(agentId);
+      if (!g) continue; // finding for an agent not in our DB — skip (e.g. BR-staff)
+      const sev = (doc._source.vulnerability.severity || "").toLowerCase();
       if (g[sev] !== undefined) g[sev]++;
       g.total++;
     }
@@ -130,10 +118,8 @@ router.get("/:hostname", requireAuth, async (req, res) => {
       });
     }
 
-    const docs = dedupe(await fetchVulnDocs(agent.wazuhId));
-    const items = docs
-      .map(normalise)
-      .sort((a, b) => (b.cvssScore || 0) - (a.cvssScore || 0));
+    const docs = await fetchVulnDocs(agent.wazuhId);
+    const items = docs.map(normalise);
 
     res.json({
       ok: true,
