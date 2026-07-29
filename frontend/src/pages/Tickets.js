@@ -6,8 +6,6 @@ import { useAuth } from "../context/AuthContext";
 
 const API = process.env.REACT_APP_API_BASE || "http://localhost:5000";
 
-const ALL_ASSETS = ["DC1", "HQ-staff-01", "kali"];
-
 function priorityColor(p) {
   return { Critical: "hsl(350,100%,65%)", High: "hsl(25,100%,60%)", Medium: "hsl(45,100%,50%)", Low: "hsl(130,60%,50%)" }[p] || "var(--muted)";
 }
@@ -16,6 +14,15 @@ function statusColor(s) {
 }
 function statusLabel(s) {
   return { open: "Open", "in-progress": "In Progress", resolved: "Resolved" }[s] || s;
+}
+function ageInDays(createdAt) {
+  return Math.floor((Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24));
+}
+function ageColor(days) {
+  if (days >= 30) return "hsl(350,100%,65%)"; // critical
+  if (days >= 14) return "hsl(25,100%,60%)";  // stale
+  if (days >= 7) return "hsl(45,100%,50%)";   // aging
+  return "var(--muted)";                       // fresh
 }
 
 function Badge({ color, children }) {
@@ -27,24 +34,27 @@ function Badge({ color, children }) {
   );
 }
 
-// ── Create Ticket Panel ───────────────────────────────────────────────────────
-function CreateTicketPanel({ users, onCreated, onCancel }) {
-  const [asset, setAsset]         = useState(ALL_ASSETS[0]);
+function CreateTicketPanel({ users, assets, onCreated, onCancel }) {
+  const [asset, setAsset]         = useState(assets[0] || "");
   const [checks, setChecks]       = useState([]);
   const [checkSearch, setCheckSearch] = useState("");
-  const [selectedCheck, setSelectedCheck] = useState(null);
+  const [selectedCheckIds, setSelectedCheckIds] = useState([]); // multi-select
   const [priority, setPriority]   = useState("Medium");
   const [assignedTo, setAssignedTo] = useState("");
   const [notes, setNotes]         = useState("");
   const [loadingChecks, setLoadingChecks] = useState(false);
   const [saving, setSaving]       = useState(false);
   const [err, setErr]             = useState("");
+  const [progress, setProgress]   = useState(null); // { done, total } while creating
 
-  // Load failed checks for selected asset
+  useEffect(() => {
+    if (!asset && assets.length > 0) setAsset(assets[0]);
+  }, [assets, asset]);
+
   useEffect(() => {
     if (!asset) return;
     setLoadingChecks(true);
-    setSelectedCheck(null);
+    setSelectedCheckIds([]);
     setCheckSearch("");
     axios.get(`${API}/api/compliance/checks/${encodeURIComponent(asset)}/failed`)
       .then(res => setChecks(res.data?.data || []))
@@ -57,44 +67,84 @@ function CreateTicketPanel({ users, onCreated, onCancel }) {
     return !q || c.checkId.toLowerCase().includes(q) || c.title.toLowerCase().includes(q);
   });
 
-  async function handleCreate() {
-    if (!selectedCheck) { setErr("Select a failed check first"); return; }
-    setSaving(true);
-    setErr("");
-    try {
-      await axios.post(`${API}/api/tickets`, {
-        assetHostname: asset,
-        checkId:       selectedCheck.checkId,
-        title:         selectedCheck.title,
-        remediation:   selectedCheck.remediation || "",
-        priority,
-        assignedTo,
-        notes,
-      });
-      onCreated();
-    } catch (e) {
-      setErr(e?.response?.data?.error || "Failed to create ticket");
-      setSaving(false);
+  function toggleCheck(checkId) {
+    setSelectedCheckIds(prev =>
+      prev.includes(checkId) ? prev.filter(id => id !== checkId) : [...prev, checkId],
+    );
+  }
+
+  function toggleSelectAllFiltered() {
+    const filteredIds = filteredChecks.map(c => c.checkId);
+    const allSelected = filteredIds.length > 0 && filteredIds.every(id => selectedCheckIds.includes(id));
+    if (allSelected) {
+      setSelectedCheckIds(prev => prev.filter(id => !filteredIds.includes(id)));
+    } else {
+      setSelectedCheckIds(prev => [...new Set([...prev, ...filteredIds])]);
     }
   }
+
+  async function handleCreate() {
+    if (selectedCheckIds.length === 0) {
+      setErr("Select at least one failed check first");
+      return;
+    }
+    setSaving(true);
+    setErr("");
+    setProgress({ done: 0, total: selectedCheckIds.length });
+
+    const selected = checks.filter(c => selectedCheckIds.includes(c.checkId));
+    let failures = 0;
+
+    for (let i = 0; i < selected.length; i++) {
+      const c = selected[i];
+      try {
+        await axios.post(`${API}/api/tickets`, {
+          assetHostname: asset,
+          checkId:       c.checkId,
+          title:         c.title,
+          remediation:   c.remediation || "",
+          priority,
+          assignedTo,
+          notes,
+        });
+      } catch (e) {
+        failures++;
+      }
+      setProgress({ done: i + 1, total: selected.length });
+    }
+
+    setSaving(false);
+    setProgress(null);
+
+    if (failures > 0 && failures === selected.length) {
+      setErr(`Failed to create any tickets (${failures} already existed or errored).`);
+      return;
+    }
+    if (failures > 0) {
+      setErr(`Created ${selected.length - failures} of ${selected.length} tickets. ${failures} skipped (likely already had a ticket).`);
+    }
+    onCreated();
+  }
+
+  const allFilteredSelected =
+    filteredChecks.length > 0 && filteredChecks.every(c => selectedCheckIds.includes(c.checkId));
 
   return (
     <div className="card" style={{ marginBottom: 20, borderColor: "var(--accent)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-        <div style={{ fontWeight: 800, fontSize: 15 }}>Create Remediation Ticket</div>
+        <div style={{ fontWeight: 800, fontSize: 15 }}>Create Remediation Ticket(s)</div>
         <button onClick={onCancel} style={{
           background: "transparent", border: "1px solid var(--line)",
           borderRadius: 6, padding: "5px 12px", cursor: "pointer", color: "var(--muted)", fontSize: 12,
         }}>✕ Cancel</button>
       </div>
 
-      {/* Step 1 — pick asset */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
-          Step 1 — Select Asset
+          Step 1 — Select Asset {assets.length === 0 && <span style={{ color: "hsl(45,100%,50%)", fontWeight: 400, textTransform: "none" }}>(loading assets...)</span>}
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          {ALL_ASSETS.map(a => (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {assets.map(a => (
             <button key={a} onClick={() => setAsset(a)} style={{
               padding: "7px 16px", borderRadius: 6, fontSize: 13, fontWeight: 600,
               cursor: "pointer",
@@ -106,16 +156,29 @@ function CreateTicketPanel({ users, onCreated, onCancel }) {
         </div>
       </div>
 
-      {/* Step 2 — pick failed check */}
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
-          Step 2 — Select Failed Check {checks.length > 0 && <span style={{ color: "var(--muted)", fontWeight: 400, textTransform: "none" }}>({checks.length} failed)</span>}
+        <div style={{
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase",
+          letterSpacing: "0.05em", marginBottom: 8,
+        }}>
+          <span>
+            Step 2 — Select Failed Checks {checks.length > 0 && <span style={{ color: "var(--muted)", fontWeight: 400, textTransform: "none" }}>({checks.length} failed)</span>}
+          </span>
+          {selectedCheckIds.length > 0 && (
+            <span style={{
+              color: "var(--accent)", fontWeight: 700, textTransform: "none",
+              fontSize: 12, background: "var(--accent-muted)", padding: "2px 10px", borderRadius: 12,
+            }}>
+              {selectedCheckIds.length} selected
+            </span>
+          )}
         </div>
         <input
           className="input"
           placeholder="Search by check ID or title..."
           value={checkSearch}
-          onChange={e => { setCheckSearch(e.target.value); setSelectedCheck(null); }}
+          onChange={e => setCheckSearch(e.target.value)}
           style={{ width: "100%", marginBottom: 8, boxSizing: "border-box" }}
         />
         {loadingChecks && <div style={{ fontSize: 12, color: "var(--muted)", padding: "8px 0" }}>Loading failed checks...</div>}
@@ -125,49 +188,57 @@ function CreateTicketPanel({ users, onCreated, onCancel }) {
           </div>
         )}
         {!loadingChecks && filteredChecks.length > 0 && (
-          <div style={{
-            maxHeight: 200, overflowY: "auto", border: "1px solid var(--line)",
-            borderRadius: 8, background: "var(--surface)",
-          }}>
-            {filteredChecks.slice(0, 50).map(c => (
-              <div
-                key={c.checkId}
-                onClick={() => setSelectedCheck(c)}
-                style={{
-                  padding: "10px 14px", cursor: "pointer",
-                  borderBottom: "1px solid var(--line)",
-                  background: selectedCheck?.checkId === c.checkId ? "var(--accent-muted)" : "transparent",
-                  borderLeft: selectedCheck?.checkId === c.checkId ? "3px solid var(--accent)" : "3px solid transparent",
-                  transition: "background 0.1s",
-                }}
-                onMouseEnter={e => { if (selectedCheck?.checkId !== c.checkId) e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
-                onMouseLeave={e => { if (selectedCheck?.checkId !== c.checkId) e.currentTarget.style.background = "transparent"; }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span className="mono" style={{ fontSize: 11, color: "var(--accent)", flexShrink: 0 }}>{c.checkId}</span>
-                  <span style={{ fontSize: 12, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.title}</span>
-                </div>
-              </div>
-            ))}
-            {filteredChecks.length > 50 && (
+          <>
+            <div
+              onClick={toggleSelectAllFiltered}
+              style={{
+                display: "flex", alignItems: "center", gap: 8, padding: "6px 4px",
+                cursor: "pointer", fontSize: 12, color: "var(--muted)", fontWeight: 600,
+              }}
+            >
+              <input type="checkbox" checked={allFilteredSelected} onChange={() => {}} style={{ cursor: "pointer" }} />
+              {allFilteredSelected ? "Deselect all" : `Select all (${filteredChecks.length})`}
+            </div>
+            <div style={{
+              maxHeight: 260, overflowY: "auto", border: "1px solid var(--line)",
+              borderRadius: 8, background: "var(--surface)",
+            }}>
+              {filteredChecks.slice(0, 100).map(c => {
+                const isSelected = selectedCheckIds.includes(c.checkId);
+                return (
+                  <div
+                    key={c.checkId}
+                    onClick={() => toggleCheck(c.checkId)}
+                    style={{
+                      padding: "10px 14px", cursor: "pointer",
+                      borderBottom: "1px solid var(--line)",
+                      background: isSelected ? "var(--accent-muted)" : "transparent",
+                      borderLeft: isSelected ? "3px solid var(--accent)" : "3px solid transparent",
+                      display: "flex", alignItems: "center", gap: 10,
+                      transition: "background 0.1s",
+                    }}
+                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <input type="checkbox" checked={isSelected} onChange={() => {}} style={{ cursor: "pointer", flexShrink: 0 }} />
+                    <span className="mono" style={{ fontSize: 11, color: "var(--accent)", flexShrink: 0 }}>{c.checkId}</span>
+                    <span style={{ fontSize: 12, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.title}</span>
+                  </div>
+                );
+              })}
+            </div>
+            {filteredChecks.length > 100 && (
               <div style={{ padding: "8px 14px", fontSize: 11, color: "var(--muted)" }}>
-                Showing 50 of {filteredChecks.length} — narrow your search
+                Showing 100 of {filteredChecks.length} — narrow your search to select more precisely
               </div>
             )}
-          </div>
-        )}
-        {selectedCheck && (
-          <div style={{ marginTop: 8, padding: "10px 14px", borderRadius: 6, background: "var(--accent-muted)", border: "1px solid var(--accent-border)" }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", marginBottom: 4 }}>SELECTED CHECK — REMEDIATION</div>
-            <div style={{ fontSize: 12, lineHeight: 1.6 }}>{selectedCheck.remediation || "No remediation steps recorded."}</div>
-          </div>
+          </>
         )}
       </div>
 
-      {/* Step 3 — priority, assignee, notes */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
-          Step 3 — Details
+          Step 3 — Details (applied to all selected checks)
         </div>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: 140 }}>
@@ -178,7 +249,9 @@ function CreateTicketPanel({ users, onCreated, onCancel }) {
             </select>
           </div>
           <div style={{ flex: 1, minWidth: 160 }}>
-            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 5 }}>Assign To <span style={{ color: "var(--muted)", fontWeight: 400 }}>(optional — leave blank for self-assign)</span></div>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 5 }}>
+              Assign To {users.length === 0 && <span style={{ color: "hsl(45,100%,50%)", fontWeight: 400 }}>(no assignable users found)</span>}
+            </div>
             <select className="input" value={assignedTo} onChange={e => setAssignedTo(e.target.value)}
               style={{ width: "100%" }}>
               <option value="">Unassigned</option>
@@ -200,20 +273,31 @@ function CreateTicketPanel({ users, onCreated, onCancel }) {
         </div>
       )}
 
-      <button onClick={handleCreate} disabled={saving || !selectedCheck} style={{
+      {progress && (
+        <div style={{ marginBottom: 12, fontSize: 12, color: "var(--muted)" }}>
+          Creating tickets... {progress.done} / {progress.total}
+        </div>
+      )}
+
+      <button onClick={handleCreate} disabled={saving || selectedCheckIds.length === 0} style={{
         width: "100%", padding: "10px", borderRadius: 8, fontSize: 14, fontWeight: 700,
-        background: selectedCheck ? "var(--accent)" : "var(--surface)",
+        background: selectedCheckIds.length > 0 ? "var(--accent)" : "var(--surface)",
         border: "1px solid var(--line)",
-        color: selectedCheck ? "#000" : "var(--muted)",
-        cursor: selectedCheck ? "pointer" : "default",
+        color: selectedCheckIds.length > 0 ? "#000" : "var(--muted)",
+        cursor: selectedCheckIds.length > 0 ? "pointer" : "default",
         opacity: saving ? 0.7 : 1,
-      }}>{saving ? "Creating..." : "Create Ticket"}</button>
+      }}>
+        {saving
+          ? `Creating... (${progress?.done ?? 0}/${progress?.total ?? 0})`
+          : selectedCheckIds.length > 0
+            ? `Create ${selectedCheckIds.length} Ticket${selectedCheckIds.length !== 1 ? "s" : ""}`
+            : "Select checks to create tickets"}
+      </button>
     </div>
   );
 }
 
-// ── Ticket Row ────────────────────────────────────────────────────────────────
-function TicketRow({ ticket, currentUser, users, onUpdated, onDeleted }) {
+function TicketRow({ ticket, currentUser, users, selected, onToggleSelect, canBulkAssign, onUpdated, onDeleted }) {
   const [editing, setEditing]   = useState(false);
   const [status, setStatus]     = useState(ticket.status);
   const [assigned, setAssigned] = useState(ticket.assignedTo || "");
@@ -222,6 +306,7 @@ function TicketRow({ ticket, currentUser, users, onUpdated, onDeleted }) {
 
   const isUnassigned = !ticket.assignedTo;
   const isMyTicket   = ticket.assignedTo === currentUser?.username;
+  const isResolved   = ticket.status === "resolved";
 
   async function handleSelfAssign() {
     try {
@@ -256,6 +341,18 @@ function TicketRow({ ticket, currentUser, users, onUpdated, onDeleted }) {
   return (
     <>
       <tr style={{ borderLeft: `3px solid ${isMyTicket ? "var(--accent)" : isUnassigned ? "hsl(45,100%,50%)" : "transparent"}` }}>
+        {canBulkAssign && (
+          <td style={{ width: 34, textAlign: "center" }}>
+            {!isResolved && (
+              <input
+                type="checkbox"
+                checked={selected}
+                onChange={() => onToggleSelect(ticket._id)}
+                style={{ cursor: "pointer" }}
+              />
+            )}
+          </td>
+        )}
         <td><span className="mono" style={{ fontSize: 11, color: "var(--accent)" }}>{ticket.checkId}</span></td>
         <td>
           <Link to={`/asset/${encodeURIComponent(ticket.assetHostname)}`}
@@ -283,6 +380,9 @@ function TicketRow({ ticket, currentUser, users, onUpdated, onDeleted }) {
           )}
         </td>
         <td style={{ fontSize: 11, color: "var(--muted)" }}>{new Date(ticket.createdAt).toLocaleDateString()}</td>
+        <td style={{ fontSize: 12, fontWeight: 700, color: isResolved ? "var(--muted)" : ageColor(ageInDays(ticket.createdAt)) }}>
+          {isResolved ? "—" : `${ageInDays(ticket.createdAt)}d`}
+        </td>
         <td style={{ fontSize: 11, color: ticket.resolvedAt ? "hsl(130,60%,50%)" : "var(--muted)" }}>
           {ticket.resolvedAt ? new Date(ticket.resolvedAt).toLocaleDateString() : "—"}
         </td>
@@ -305,7 +405,7 @@ function TicketRow({ ticket, currentUser, users, onUpdated, onDeleted }) {
 
       {editing && (
         <tr style={{ background: "var(--surface)" }}>
-          <td colSpan={9} style={{ padding: "16px 20px" }}>
+          <td colSpan={canBulkAssign ? 11 : 10} style={{ padding: "16px 20px" }}>
             <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
               <div>
                 <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", marginBottom: 5 }}>Status</div>
@@ -353,10 +453,10 @@ function TicketRow({ ticket, currentUser, users, onUpdated, onDeleted }) {
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function Tickets() {
   const { user: currentUser } = useAuth();
   const [tickets, setTickets]   = useState([]);
+  const [allAssets, setAllAssets] = useState([]);
   const [users, setUsers]       = useState([]);
   const [loading, setLoading]   = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -364,7 +464,14 @@ export default function Tickets() {
   const [assetFilter, setAssetFilter]   = useState("all");
   const [assignFilter, setAssignFilter] = useState("all");
   const [search, setSearch]     = useState("");
+  const [sortBy, setSortBy]     = useState("oldest"); // default: surface oldest/most urgent first
   const [toast, setToast]       = useState(null);
+
+
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkAssignTo, setBulkAssignTo] = useState("");
+  const [bulkAssigning, setBulkAssigning] = useState(false);
+  const [bulkStatusChanging, setBulkStatusChanging] = useState(false);
 
   function showToast(type, msg) {
     setToast({ type, msg });
@@ -374,19 +481,38 @@ export default function Tickets() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [ticketRes, userRes] = await Promise.all([
+      const [ticketRes, assetRes] = await Promise.all([
         axios.get(`${API}/api/tickets`),
-        axios.get(`${API}/api/auth/users`),
+        axios.get(`${API}/api/assets/overview`),
       ]);
       setTickets(ticketRes.data?.data || []);
-      const allUsers = userRes.data?.data || [];
-      setUsers(allUsers.filter(u => u.role === "analyst" || u.role === "admin"));
+      setAllAssets((assetRes.data?.data || []).map((a) => a.hostname));
+
+      // Only admin/compliance-officer can assign tickets, and only they have
+      // access to /api/auth/users on the backend — so only fetch it for them.
+      // A failure here should never take down the tickets/assets that already
+      // loaded successfully.
+      const canAssign =
+        currentUser?.role === "admin" || currentUser?.role === "compliance-officer";
+      if (canAssign) {
+        try {
+          const userRes = await axios.get(`${API}/api/auth/users`);
+          const allUsers = userRes.data?.data || [];
+          setUsers(
+            allUsers.filter((u) =>
+              ["admin", "compliance-officer", "analyst"].includes(u.role),
+            ),
+          );
+        } catch {
+          setUsers([]);
+        }
+      }
     } catch {
       showToast("err", "Failed to load tickets");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentUser]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -398,19 +524,24 @@ export default function Tickets() {
 
   const assets = [...new Set(tickets.map(t => t.assetHostname))].sort();
 
-  const filtered = tickets.filter(t => {
-    if (statusFilter !== "all" && t.status !== statusFilter) return false;
-    if (assetFilter !== "all" && t.assetHostname !== assetFilter) return false;
-    if (assignFilter === "mine" && t.assignedTo !== currentUser?.username) return false;
-    if (assignFilter === "unassigned" && t.assignedTo) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      if (!t.title.toLowerCase().includes(q) &&
-          !t.checkId.toLowerCase().includes(q) &&
-          !t.assetHostname.toLowerCase().includes(q)) return false;
-    }
-    return true;
-  });
+  const filtered = tickets
+    .filter(t => {
+      if (statusFilter !== "all" && t.status !== statusFilter) return false;
+      if (assetFilter !== "all" && t.assetHostname !== assetFilter) return false;
+      if (assignFilter === "mine" && t.assignedTo !== currentUser?.username) return false;
+      if (assignFilter === "unassigned" && t.assignedTo) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        if (!t.title.toLowerCase().includes(q) &&
+            !t.checkId.toLowerCase().includes(q) &&
+            !t.assetHostname.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const diff = new Date(a.createdAt) - new Date(b.createdAt);
+      return sortBy === "oldest" ? diff : -diff;
+    });
 
   const total         = tickets.length;
   const openCount     = tickets.filter(t => t.status === "open").length;
@@ -419,7 +550,74 @@ export default function Tickets() {
   const unassigned    = tickets.filter(t => !t.assignedTo).length;
   const myTickets     = tickets.filter(t => t.assignedTo === currentUser?.username).length;
 
-  const canCreate = currentUser?.role === "admin" || currentUser?.role === "analyst";
+  const canCreate = currentUser?.role === "admin" || currentUser?.role === "compliance-officer";
+  const canBulkAssign = currentUser?.role === "admin" || currentUser?.role === "compliance-officer";
+
+  useEffect(() => {
+    setSelectedIds(prev => prev.filter(id => filtered.some(t => t._id === id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, assetFilter, assignFilter, search]);
+
+  function toggleSelect(id) {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id],
+    );
+  }
+
+  function toggleSelectAll() {
+    const selectable = filtered.filter(t => t.status !== "resolved");
+    if (selectedIds.length === selectable.length && selectable.length > 0) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(selectable.map(t => t._id));
+    }
+  }
+
+  async function handleBulkAssign() {
+    if (selectedIds.length === 0 || !bulkAssignTo) return;
+    setBulkAssigning(true);
+    try {
+      const res = await axios.patch(`${API}/api/tickets/bulk-assign`, {
+        ticketIds: selectedIds,
+        assignedTo: bulkAssignTo,
+      });
+      showToast(
+        "ok",
+        `Assigned ${res.data?.modified ?? selectedIds.length} ticket${selectedIds.length !== 1 ? "s" : ""} to ${bulkAssignTo}`,
+      );
+      setSelectedIds([]);
+      setBulkAssignTo("");
+      load();
+    } catch (e) {
+      showToast("err", e?.response?.data?.error || "Bulk assign failed");
+    } finally {
+      setBulkAssigning(false);
+    }
+  }
+
+   async function handleBulkStatus(status) {
+    if (selectedIds.length === 0) return;
+    setBulkStatusChanging(true);
+    try {
+      const res = await axios.patch(`${API}/api/tickets/bulk-status`, {
+        ticketIds: selectedIds,
+        status,
+      });
+      showToast(
+        "ok",
+        `Marked ${res.data?.modified ?? selectedIds.length} ticket${selectedIds.length !== 1 ? "s" : ""} as ${statusLabel(status)}`,
+      );
+      setSelectedIds([]);
+      load();
+    } catch (e) {
+      showToast("err", e?.response?.data?.error || "Bulk status change failed");
+    } finally {
+      setBulkStatusChanging(false);
+    }
+  }
+
+  const selectableCount = filtered.filter(t => t.status !== "resolved").length;
+  const allSelected = selectableCount > 0 && selectedIds.length === selectableCount;
 
   return (
     <Layout title="Remediation Tickets">
@@ -437,7 +635,6 @@ export default function Tickets() {
         </div>
       )}
 
-      {/* Header row */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, gap: 16, flexWrap: "wrap" }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           {[
@@ -453,7 +650,6 @@ export default function Tickets() {
               <div style={{ fontSize: 22, fontWeight: 900, color }}>{value}</div>
             </div>
           ))}
-          {/* Resolution bar */}
           <div className="card" style={{ padding: "10px 16px", minWidth: 160 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Resolution Rate</div>
             <div style={{ height: 5, background: "var(--line)", borderRadius: 3, overflow: "hidden", marginBottom: 5 }}>
@@ -479,16 +675,15 @@ export default function Tickets() {
         )}
       </div>
 
-      {/* Create panel */}
       {showCreate && (
         <CreateTicketPanel
           users={users}
+          assets={allAssets}
           onCreated={handleCreated}
           onCancel={() => setShowCreate(false)}
         />
       )}
 
-      {/* Filters */}
       <div className="card" style={{ marginBottom: 16, padding: "12px 16px" }}>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <input className="input" placeholder="Search title, check ID, or asset..."
@@ -517,10 +712,125 @@ export default function Tickets() {
             <option value="all">All Assets</option>
             {assets.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
+          <select className="input" value={sortBy} onChange={e => setSortBy(e.target.value)}
+            style={{ fontSize: 12, padding: "6px 10px", minWidth: 130 }}>
+            <option value="oldest">Sort: Oldest first</option>
+            <option value="newest">Sort: Newest first</option>
+          </select>
         </div>
       </div>
+   
+      {canBulkAssign && selectedIds.length > 0 && (
+        <div
+          className="card"
+          style={{
+            marginBottom: 16,
+            padding: "12px 16px",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+            borderColor: "var(--accent)",
+            background: "var(--accent-muted)",
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 700 }}>
+            {selectedIds.length} ticket{selectedIds.length !== 1 ? "s" : ""} selected
+          </div>
 
-      {/* Table */}
+          {/* Bulk assign */}
+          <select
+            className="input"
+            value={bulkAssignTo}
+            onChange={e => setBulkAssignTo(e.target.value)}
+            style={{ fontSize: 12, padding: "6px 10px", minWidth: 200 }}
+          >
+            <option value="">Assign to...</option>
+            {currentUser?.username && (
+              <option value={currentUser.username}>{currentUser.username} (me)</option>
+            )}
+            {users
+              .filter(u => u.username !== currentUser?.username)
+              .map(u => (
+                <option key={u._id} value={u.username}>
+                  {u.username} ({u.role})
+                </option>
+              ))}
+          </select>
+          <button
+            onClick={handleBulkAssign}
+            disabled={!bulkAssignTo || bulkAssigning}
+            style={{
+              padding: "7px 18px",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 700,
+              background: bulkAssignTo ? "var(--accent)" : "var(--surface)",
+              border: "1px solid var(--line)",
+              color: bulkAssignTo ? "#000" : "var(--muted)",
+              cursor: bulkAssignTo ? "pointer" : "default",
+              opacity: bulkAssigning ? 0.7 : 1,
+            }}
+          >
+            {bulkAssigning ? "Assigning..." : "Assign Selected"}
+          </button>
+
+          <div style={{ width: 1, height: 24, background: "var(--line)" }} />
+
+          {/* Bulk status change */}
+          <button
+            onClick={() => handleBulkStatus("in-progress")}
+            disabled={bulkStatusChanging}
+            style={{
+              padding: "7px 14px",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 700,
+              background: "hsla(45,100%,50%,0.12)",
+              border: "1px solid hsla(45,100%,50%,0.4)",
+              color: "hsl(45,100%,50%)",
+              cursor: bulkStatusChanging ? "default" : "pointer",
+              opacity: bulkStatusChanging ? 0.6 : 1,
+            }}
+          >
+            Mark In-Progress
+          </button>
+          <button
+            onClick={() => handleBulkStatus("resolved")}
+            disabled={bulkStatusChanging}
+            style={{
+              padding: "7px 14px",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 700,
+              background: "hsla(130,60%,50%,0.12)",
+              border: "1px solid hsla(130,60%,50%,0.4)",
+              color: "hsl(130,60%,50%)",
+              cursor: bulkStatusChanging ? "default" : "pointer",
+              opacity: bulkStatusChanging ? 0.6 : 1,
+            }}
+          >
+            Mark Resolved
+          </button>
+
+          <button
+            onClick={() => setSelectedIds([])}
+            style={{
+              padding: "7px 12px",
+              borderRadius: 6,
+              fontSize: 12,
+              background: "transparent",
+              border: "1px solid var(--line)",
+              color: "var(--muted)",
+              cursor: "pointer",
+              marginLeft: "auto",
+            }}
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
+
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         {loading ? (
           <div style={{ padding: 30, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>Loading tickets...</div>
@@ -541,6 +851,17 @@ export default function Tickets() {
             <table>
               <thead>
                 <tr>
+                  {canBulkAssign && (
+                    <th style={{ width: 34, textAlign: "center" }}>
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={toggleSelectAll}
+                        style={{ cursor: "pointer" }}
+                        title="Select all visible open/in-progress tickets"
+                      />
+                    </th>
+                  )}
                   <th style={{ width: 85 }}>Check</th>
                   <th style={{ width: 100 }}>Asset</th>
                   <th>Title</th>
@@ -548,6 +869,7 @@ export default function Tickets() {
                   <th style={{ width: 105 }}>Status</th>
                   <th style={{ width: 140 }}>Assigned To</th>
                   <th style={{ width: 88 }}>Created</th>
+                  <th style={{ width: 70 }}>Age</th>
                   <th style={{ width: 88 }}>Resolved</th>
                   <th style={{ width: 100 }}>Actions</th>
                 </tr>
@@ -559,6 +881,9 @@ export default function Tickets() {
                     ticket={ticket}
                     currentUser={currentUser}
                     users={users}
+                    selected={selectedIds.includes(ticket._id)}
+                    onToggleSelect={toggleSelect}
+                    canBulkAssign={canBulkAssign}
                     onUpdated={load}
                     onDeleted={load}
                   />

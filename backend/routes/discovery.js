@@ -126,7 +126,7 @@ router.post("/scan", requireAuth, requireAdmin, async (req, res) => {
 
 // ── GET /api/discovery — list devices, defaults to CURRENT subnet only ──────
 // Pass ?all=true to see every device ever recorded, across all past networks.
-router.get("/", requireAuth, async (req, res) => {
+router.get("/", requireAuth, requireAdmin, async (req, res) => {
   try {
     const showAll = req.query.all === "true";
     const currentSubnet = getSubnet();

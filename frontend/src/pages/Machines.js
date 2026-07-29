@@ -28,7 +28,6 @@ export default function Machines() {
   const [exposureLevel, setExposureLevel] = useState("internal");
   const [deployMethod, setDeployMethod] = useState("agent");
   const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
   const [sshKeyPath, setSshKeyPath] = useState("/home/patch/.ssh/patch_key");
 
   // Generated script
@@ -80,7 +79,6 @@ export default function Machines() {
         exposureLevel,
         deployMethod,
         username: username.trim(),
-        password,
         sshKeyPath: deployMethod === "ssh" ? sshKeyPath.trim() : "",
       };
       await axios.post(`${API}/api/machines`, body);
@@ -97,7 +95,6 @@ export default function Machines() {
       setHostname("");
       setIp("");
       setUsername("");
-      setPassword("");
       setRole("workstation");
       setCriticality(0.5);
       setExposureLevel("internal");
@@ -156,8 +153,7 @@ export default function Machines() {
     letterSpacing: "0.05em",
   };
 
-  const needsCreds = deployMethod === "winrm" || deployMethod === "ssh";
-
+  const needsCreds = deployMethod === "ssh";
   return (
     <Layout title="Machines">
       {err && (
@@ -364,8 +360,7 @@ export default function Machines() {
             >
               {os === "windows" ? (
                 <>
-                  <option value="agent">Agent (recommended)</option>
-                  <option value="winrm">WinRM</option>
+                  <option value="agent">Agent</option>
                 </>
               ) : (
                 <option value="ssh">SSH</option>
@@ -384,28 +379,15 @@ export default function Machines() {
                   onChange={(e) => setUsername(e.target.value)}
                 />
               </div>
-              {deployMethod === "winrm" ? (
-                <div>
-                  <div style={labelStyle}>Password</div>
-                  <input
-                    className="input"
-                    type="password"
-                    style={{ width: "100%", boxSizing: "border-box" }}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                </div>
-              ) : (
-                <div>
-                  <div style={labelStyle}>SSH Key Path</div>
-                  <input
-                    className="input"
-                    style={{ width: "100%", boxSizing: "border-box" }}
-                    value={sshKeyPath}
-                    onChange={(e) => setSshKeyPath(e.target.value)}
-                  />
-                </div>
-              )}
+                 <div>
+                <div style={labelStyle}>SSH Key Path</div>
+                <input
+                  className="input"
+                  style={{ width: "100%", boxSizing: "border-box" }}
+                  value={sshKeyPath}
+                  onChange={(e) => setSshKeyPath(e.target.value)}
+                />
+              </div>
             </>
           )}
         </div>
@@ -418,10 +400,8 @@ export default function Machines() {
             lineHeight: 1.5,
           }}
         >
-          {deployMethod === "agent"
-            ? "Agent method: patching is handled by the RiskPatch agent polling outward — no credentials stored. Recommended for Windows."
-            : deployMethod === "winrm"
-            ? "WinRM method: stores Windows admin credentials so the server can push commands directly."
+            {deployMethod === "agent"
+            ? "Agent method: patching is handled by the RiskPatch agent polling outward — no credentials stored."
             : "SSH method: uses an SSH key to reach the Linux machine for patching."}
         </div>
 

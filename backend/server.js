@@ -32,6 +32,7 @@ app.use("/api/snapshots",     requireAuth, require("./routes/snapshots"));
 app.use("/api/groups",        requireAuth, require("./routes/groups"));
 app.use("/api/agent",         require("./routes/agentCommands"));
 app.use("/api/tickets",       requireAuth, require("./routes/tickets"));
+app.use("/api/compliance-history", require("./routes/complianceHistory"));
 app.use("/api/deploy",        requireAuth, require("./routes/deploy"));
 app.use("/api/audit-log", require("./routes/auditLog"));
 app.use("/api/discovery", require("./routes/discovery"));

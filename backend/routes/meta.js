@@ -1,5 +1,6 @@
 const router   = require("express").Router();
 const AssetMeta = require("../models/AssetMeta");
+const { requireAuth, requireRole } = require("../middleware/authMiddleware");
 
 // Exposure multiplier mapping — used by risk engine
 const EXPOSURE_MULTIPLIER = {
@@ -10,7 +11,7 @@ const EXPOSURE_MULTIPLIER = {
 };
 
 // POST /api/meta/upsert — create or update asset metadata
-router.post("/upsert", async (req, res) => {
+router.post("/upsert", requireAuth, requireRole("admin"), async (req, res) => {
   try {
     const { hostname, role, owner, criticality, notes, exposureLevel, networkZone, internet_facing } = req.body;
     if (!hostname) return res.status(400).json({ ok: false, error: "hostname required" });
@@ -38,7 +39,7 @@ router.post("/upsert", async (req, res) => {
 });
 
 // GET /api/meta/all — return all asset metadata (used by network map)
-router.get("/all", async (req, res) => {
+router.get("/all", requireAuth, async (req, res) => {
   try {
     const docs = await AssetMeta.find({}).lean();
     // Attach exposure multiplier to each doc
@@ -53,7 +54,7 @@ router.get("/all", async (req, res) => {
 });
 
 // PATCH /api/meta/:hostname/exposure — update exposure level only (admin quick action)
-router.patch("/:hostname/exposure", async (req, res) => {
+router.patch("/:hostname/exposure", requireAuth, requireRole("admin"), async (req, res) => {
   try {
     const { exposureLevel, networkZone } = req.body;
     const allowed = ["internet", "dmz", "internal", "isolated"];
@@ -77,7 +78,7 @@ router.patch("/:hostname/exposure", async (req, res) => {
 });
 
 // GET /api/meta/:hostname
-router.get("/:hostname", async (req, res) => {
+router.get("/:hostname", requireAuth, async (req, res) => {
   try {
     const doc = await AssetMeta.findOne({ hostname: req.params.hostname }).lean();
     if (!doc) return res.json({ ok: true, data: null });

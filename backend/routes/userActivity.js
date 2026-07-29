@@ -1,9 +1,9 @@
 const router = require("express").Router();
-const { requireAuth, requireAdmin } = require("../middleware/authMiddleware");
+const { requireAuth, requireAdmin,requireRole  } = require("../middleware/authMiddleware");
 const UserActivity = require("../models/UserActivity");
 
 // ── GET /api/user-activity/summary — login/action counts per user ───────────
-router.get("/summary", requireAuth, requireAdmin, async (req, res) => {
+router.get("/summary", requireAuth, requireRole("admin", "analyst"), async (req, res) => {
   try {
     const all = await UserActivity.find({}).lean();
     const byUser = new Map();
@@ -34,17 +34,23 @@ router.get("/summary", requireAuth, requireAdmin, async (req, res) => {
 });
 
 // ── GET /api/user-activity — full filterable activity list ──────────────────
-router.get("/", requireAuth, requireAdmin, async (req, res) => {
+router.get("/", requireAuth, requireRole("admin", "analyst"), async (req, res) => {
   try {
-    const { username, action, limit } = req.query;
+    const { username, action, limit, since, until } = req.query;
     const filter = {};
     if (username) filter.username = username;
     if (action === "logins") filter.action = { $in: ["login_success", "login_failed"] };
     else if (action === "actions") filter.action = { $nin: ["login_success", "login_failed"] };
 
+    if (since || until) {
+      filter.createdAt = {};
+      if (since) filter.createdAt.$gte = new Date(since);
+      if (until) filter.createdAt.$lte = new Date(until);
+    }
+
     const records = await UserActivity.find(filter)
       .sort({ createdAt: -1 })
-      .limit(parseInt(limit) || 300)
+      .limit(parseInt(limit) || 1000)
       .lean();
 
     res.json({ ok: true, count: records.length, data: records });
@@ -53,7 +59,6 @@ router.get("/", requireAuth, requireAdmin, async (req, res) => {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
-
 // ── GET /api/user-activity/me — a user's own activity, no admin required ────
 router.get("/me", requireAuth, async (req, res) => {
   try {

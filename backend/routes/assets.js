@@ -5,23 +5,28 @@ const AssetMeta       = require("../models/AssetMeta");
 const CVEMatch        = require("../models/CVEMatch");
 const ComplianceCheck = require("../models/ComplianceCheck");
 const { computeRisk } = require("./risk");
+const { requireAuth } = require("../middleware/authMiddleware");
+const Agent = require("../models/Agent");
+const { getVulnMatchesForAgent } = require("./vulnerabilities");
 
-router.get("/overview", async (req, res) => {
+router.get("/overview", requireAuth, async (req, res) => {
   try {
     const assets = await Asset.find({}).sort({ lastSeen: -1 });
     const rows = await Promise.all(assets.map(async (a) => {
       const rx = new RegExp("^" + a.hostname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i");
-      const [patch, meta, cveMatches, failedCount, totalCount, latestCheck] = await Promise.all([
+       const [patch, meta, cveMatches, failedCount, totalCount, latestCheck, agent] = await Promise.all([
         Patch.findOne({ assetHostname: { $regex: rx } }).sort({ collectedAt: -1 }),
         AssetMeta.findOne({ hostname: { $regex: rx } }),
         CVEMatch.find({ assetHostname: { $regex: rx } }),
         ComplianceCheck.countDocuments({ assetHostname: { $regex: rx }, result: "failed" }),
         ComplianceCheck.countDocuments({ assetHostname: { $regex: rx }, result: { $in: ["failed", "passed"] } }),
         ComplianceCheck.findOne({ assetHostname: { $regex: rx } }).sort({ collectedAt: -1 }),
+        Agent.findOne({ hostname: { $regex: rx } }).lean(),
       ]);
+      const vulnMatches = agent?.wazuhId ? await getVulnMatchesForAgent(agent.wazuhId) : [];
       const score       = totalCount > 0 ? Math.round(((totalCount - failedCount) / totalCount) * 100) : null;
       const collectedAt = latestCheck?.collectedAt || null;
-      const risk        = await computeRisk({ patch, compliance: { failedCount }, meta, cveMatches });
+      const risk        = await computeRisk({ patch, compliance: { failedCount }, meta, cveMatches, vulnMatches });
       return {
         hostname: a.hostname, os: a.os, ip: a.ip, source: a.source, lastSeen: a.lastSeen,
         patch: patch ? { collectedAt: patch.collectedAt, missingCount: patch.missingCount } : null,

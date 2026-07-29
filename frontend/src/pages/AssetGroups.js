@@ -12,7 +12,7 @@ const DEFAULT_GROUPS = [
     description: "Windows domain-joined machines managed by Active Directory",
     color: "hsl(210,80%,60%)",
     icon: "🏛️",
-    members: ["DC1", "HQ-staff-01"],
+    members: [],
     owner: "IT Infrastructure",
   },
   {
@@ -20,8 +20,16 @@ const DEFAULT_GROUPS = [
     description: "Security testing and monitoring assets",
     color: "hsl(350,100%,65%)",
     icon: "🛡️",
-    members: ["kali"],
+    members: [],
     owner: "IT Security",
+  },
+  {
+    name: "Physical / BYOD Workstations",
+    description: "Non-domain-joined physical machines — personal or field devices",
+    color: "hsl(45,100%,55%)",
+    icon: "💻",
+    members: [],
+    owner: "IT Operations",
   },
 ];
 

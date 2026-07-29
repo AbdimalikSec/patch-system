@@ -60,7 +60,7 @@ router.post("/run/:job", requireAuth, requireAdmin, async (req, res) => {
 });
 
 // ── GET /api/system-ops/status/:job — latest run for a job ──────────────────
-router.get("/status/:job", requireAuth, async (req, res) => {
+router.get("/status/:job", requireAuth, requireAdmin, async (req, res) => {
   try {
     const latest = await SystemJob.findOne({ jobName: req.params.job })
       .sort({ startedAt: -1 })

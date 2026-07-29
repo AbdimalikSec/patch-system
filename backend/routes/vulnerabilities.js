@@ -1,7 +1,7 @@
 require("dotenv").config();
 
 const router = require("express").Router();
-const { requireAuth } = require("../middleware/authMiddleware");
+const { requireAuth, requireRole } = require("../middleware/authMiddleware");
 const Agent = require("../models/Agent");
 const axios = require("axios");
 const https = require("https");
@@ -68,7 +68,7 @@ function normalise(doc) {
 }
 
 // ── GET /api/vulnerabilities/summary — CVE counts per enrolled machine ──────
-router.get("/summary", requireAuth, async (req, res) => {
+router.get("/summary", requireAuth, requireRole("admin", "compliance-officer", "analyst", "auditor"), async (req, res) => {
   try {
     const agents = await Agent.find({ wazuhId: { $ne: "" } }).lean();
 
@@ -105,7 +105,7 @@ router.get("/summary", requireAuth, async (req, res) => {
 });
 
 // ── GET /api/vulnerabilities/:hostname — full CVE list for one machine ──────
-router.get("/:hostname", requireAuth, async (req, res) => {
+router.get("/:hostname", requireAuth, requireRole("admin", "compliance-officer", "analyst", "auditor"), async (req, res) => {
   try {
     const agent = await Agent.findOne({
       hostname: { $regex: new RegExp(`^${req.params.hostname}$`, "i") },
@@ -133,4 +133,18 @@ router.get("/:hostname", requireAuth, async (req, res) => {
   }
 });
 
+// Reusable helper — get normalised vulnerability matches for one agent,
+// so the risk engine (risk.js) can factor in real installed-software CVEs.
+async function getVulnMatchesForAgent(wazuhId) {
+  if (!wazuhId) return [];
+  try {
+    const docs = await fetchVulnDocs(wazuhId);
+    return docs.map(normalise);
+  } catch (e) {
+    console.error("[getVulnMatchesForAgent]", e.message);
+    return [];
+  }
+}
+
 module.exports = router;
+module.exports.getVulnMatchesForAgent = getVulnMatchesForAgent;

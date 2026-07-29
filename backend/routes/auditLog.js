@@ -1,7 +1,7 @@
 require("dotenv").config();
 
 const router = require("express").Router();
-const { requireAuth } = require("../middleware/authMiddleware");
+const { requireAuth, requireRole } = require("../middleware/authMiddleware");
 const Agent = require("../models/Agent");
 const axios = require("axios");
 const https = require("https");
@@ -92,7 +92,7 @@ function normalise(doc) {
 }
 
 // ── GET /api/audit-log/summary — success/failure counts per machine ─────────
-router.get("/summary", requireAuth, async (req, res) => {
+router.get("/summary", requireAuth, requireRole("admin", "auditor"), async (req, res) => {
   try {
     const docs = await fetchAuthDocs(null, 4); // up to ~2000 recent events
     const byHost = new Map();
@@ -117,7 +117,7 @@ router.get("/summary", requireAuth, async (req, res) => {
 });
 
 // ── GET /api/audit-log/:hostname — individual login events for one machine ──
-router.get("/:hostname", requireAuth, async (req, res) => {
+router.get("/:hostname", requireAuth, requireRole("admin", "auditor"), async (req, res) => {
   try {
     const agent = await Agent.findOne({
       hostname: { $regex: new RegExp(`^${req.params.hostname}$`, "i") },

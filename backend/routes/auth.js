@@ -133,7 +133,7 @@ router.post("/users", requireAuth, requireAdmin, async (req, res) => {
     const pErr = validatePassword(password);
     if (pErr) return res.status(400).json({ ok: false, error: pErr });
 
-    const allowedRoles = ["admin", "analyst", "auditor"];
+    const allowedRoles = ["admin", "analyst", "auditor", "compliance-officer", "patch-operator"];
     if (role && !allowedRoles.includes(role)) {
       return res.status(400).json({ ok: false, error: "Invalid role. Must be admin, analyst, or auditor." });
     }

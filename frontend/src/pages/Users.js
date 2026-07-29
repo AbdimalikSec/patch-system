@@ -20,6 +20,16 @@ const ROLE_COLOR = {
     border: "hsl(45,100%,50%)",
     text: "hsl(45,100%,50%)",
   },
+  "compliance-officer": {
+    bg: "hsla(280,60%,60%,0.15)",
+    border: "hsl(280,60%,60%)",
+    text: "hsl(280,60%,60%)",
+  },
+  "patch-operator": {
+    bg: "hsla(25,100%,55%,0.15)",
+    border: "hsl(25,100%,55%)",
+    text: "hsl(25,100%,55%)",
+  },
 };
 
 function RoleBadge({ role }) {
@@ -351,7 +361,9 @@ export default function Users() {
               value={role}
               onChange={(e) => setRole(e.target.value)}
             >
-              <option value="analyst">Analyst</option>
+             <option value="analyst">Analyst</option>
+              <option value="compliance-officer">Compliance Officer</option>
+              <option value="patch-operator">Patch Operator</option>
               <option value="auditor">Auditor</option>
               <option value="admin">Admin</option>
             </select>
@@ -376,7 +388,7 @@ export default function Users() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
+            gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr",
             gap: 12,
             marginTop: 20,
           }}
@@ -387,8 +399,16 @@ export default function Users() {
               desc: "Full access including user management and all dashboards.",
             },
             {
+              role: "compliance-officer",
+              desc: "Manages compliance tickets and remediation assignment.",
+            },
+            {
+              role: "patch-operator",
+              desc: "Performs patching and restarts on managed machines.",
+            },
+            {
               role: "analyst",
-              desc: "Full dashboard access. Cannot manage users.",
+              desc: "Reporting and tracking — read access, no patch or ticket actions.",
             },
             {
               role: "auditor",

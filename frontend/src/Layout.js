@@ -20,6 +20,52 @@ function NavItem({ to, label, icon }) {
   );
 }
 
+function NavGroup({ group, role, expanded, onToggle }) {
+  const visibleItems = group.items.filter((item) => item.roles.includes(role));
+  if (visibleItems.length === 0) return null;
+
+  return (
+    <div>
+      <button
+        onClick={() => onToggle(group.key)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "9px 14px",
+          background: "transparent",
+          border: "none",
+          color: "var(--muted)",
+          fontSize: 13,
+          fontWeight: 600,
+          cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        <span className="navIcon">{ICONS[group.icon]}</span>
+        <span style={{ flex: 1 }}>{group.label}</span>
+        <span
+          style={{
+            fontSize: 10,
+            transition: "transform 0.15s",
+            transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+          }}
+        >
+          ▶
+        </span>
+      </button>
+      {expanded && (
+        <div style={{ paddingLeft: 14 }}>
+          {visibleItems.map((item) => (
+            <NavItem key={item.to} to={item.to} label={item.label} icon={ICONS[item.icon]} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const ICONS = {
   overview: (
     <svg
@@ -171,6 +217,68 @@ const ICONS = {
   ),
 };
 
+// ── Grouped nav structure — top-level standalone items + expandable groups ──
+const NAV_STANDALONE = [
+  { to: "/", label: "Overview", icon: "overview", roles: ["admin", "compliance-officer", "patch-operator", "analyst"] },
+];
+
+const NAV_GROUPS = [
+  {
+    key: "patch",
+    label: "Patch Management",
+    icon: "backlog",
+    items: [
+      { to: "/backlog", label: "Patch Backlog", icon: "backlog", roles: ["admin", "compliance-officer", "patch-operator", "analyst"] },
+      { to: "/patch-log", label: "Patch Log", icon: "evaluation", roles: ["admin", "compliance-officer", "patch-operator", "analyst"] },
+      { to: "/patch-velocity-report", label: "Patch Velocity Report", icon: "evaluation", roles: ["admin", "compliance-officer", "patch-operator", "analyst"] },
+    ],
+  },
+  {
+    key: "compliance",
+    label: "Compliance & Risk",
+    icon: "compliance",
+    items: [
+      { to: "/compliance", label: "Compliance", icon: "compliance", roles: ["admin", "compliance-officer", "analyst", "auditor"] },
+      { to: "/compliance-history", label: "Compliance History", icon: "evaluation", roles: ["admin", "compliance-officer", "analyst", "auditor"] },
+      { to: "/vulnerabilities", label: "Vulnerabilities", icon: "compliance", roles: ["admin", "compliance-officer", "analyst", "auditor"] },
+      { to: "/tickets", label: "Tickets", icon: "tickets", roles: ["admin", "compliance-officer", "analyst", "auditor"] },
+      { to: "/resolution-report", label: "Resolution Report", icon: "evaluation", roles: ["admin", "compliance-officer", "analyst", "auditor"] },
+      { to: "/compliance-trend-report", label: "Compliance Trend Report", icon: "evaluation", roles: ["admin", "compliance-officer", "analyst", "auditor"] },
+    ],
+  },
+  {
+    key: "assets",
+    label: "Assets",
+    icon: "assets",
+    items: [
+      { to: "/assets", label: "Assets", icon: "assets", roles: ["admin", "compliance-officer", "patch-operator", "analyst"] },
+      { to: "/groups", label: "Asset Groups", icon: "groups", roles: ["admin", "compliance-officer", "analyst"] },
+      { to: "/network", label: "Network Map", icon: "network", roles: ["admin", "compliance-officer", "analyst"] },
+    ],
+  },
+  {
+    key: "monitoring",
+    label: "Audit & Monitoring",
+    icon: "users",
+    items: [
+      { to: "/audit-log", label: "Audit Log", icon: "users", roles: ["admin", "auditor"] },
+      { to: "/user-activity", label: "User Activity", icon: "users", roles: ["admin", "analyst"] },
+      { to: "/login-report", label: "Login & Access Report", icon: "evaluation", roles: ["admin", "analyst"] },
+      { to: "/discovery", label: "Device Discovery", icon: "network", roles: ["admin"] },
+    ],
+  },
+  {
+    key: "admin",
+    label: "Administration",
+    icon: "users",
+    items: [
+      { to: "/machines", label: "Machines", icon: "assets", roles: ["admin"] },
+      { to: "/users", label: "User Management", icon: "users", roles: ["admin"] },
+      { to: "/system-ops", label: "System Operations", icon: "evaluation", roles: ["admin"] },
+    ],
+  },
+];
+
 const ROLE_COLOR = {
   admin: {
     bg: "hsla(210,100%,60%,0.15)",
@@ -187,6 +295,16 @@ const ROLE_COLOR = {
     border: "hsl(45,100%,50%)",
     text: "hsl(45,100%,50%)",
   },
+"compliance-officer": {
+  bg: "hsla(280,60%,60%,0.15)",
+  border: "hsl(280,60%,60%)",
+  text: "hsl(280,60%,60%)",
+},
+"patch-operator": {
+  bg: "hsla(25,100%,55%,0.15)",
+  border: "hsl(25,100%,55%)",
+  text: "hsl(25,100%,55%)",
+}
 };
 
 // ── Notification Bell Component ───────────────────────────────────────────────
@@ -500,12 +618,66 @@ function NotificationBell({ loginAt }) {
   );
 }
 
+function ThemeToggle() {
+  const [isDark, setIsDark] = useState(false);
+
+  const toggle = () => {
+    const next = !isDark;
+    setIsDark(next);
+    document.documentElement.setAttribute("data-theme", next ? "dark" : "light");
+  };
+
+  return (
+    <button
+      className="themeToggleBtn"
+      onClick={toggle}
+      title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+    >
+      {isDark ? (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="5"></circle>
+          <line x1="12" y1="1" x2="12" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="23"></line>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+          <line x1="1" y1="12" x2="3" y2="12"></line>
+          <line x1="21" y1="12" x2="23" y2="12"></line>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+      ) : (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"></path>
+        </svg>
+      )}
+    </button>
+  );
+}
+
 // ── Main Layout ───────────────────────────────────────────────────────────────
 export default function Layout({ title, rightControls, children }) {
   const { user, logout, loginAt } = useAuth();
   const navigate = useNavigate();
   const role = user?.role || "analyst";
-  const rc = ROLE_COLOR[role] || ROLE_COLOR.analyst;
+  const [expandedGroups, setExpandedGroups] = useState(() => {
+    try {
+      const saved = localStorage.getItem("navExpandedGroups");
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  function toggleGroup(key) {
+    setExpandedGroups((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        localStorage.setItem("navExpandedGroups", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }
+ const rc = ROLE_COLOR[role] || ROLE_COLOR.analyst;
 
   function handleLogout() {
     logout();
@@ -527,61 +699,25 @@ export default function Layout({ title, rightControls, children }) {
           <div className="brandName">RiskPatch</div>
           <div className="brandSub">Security Intelligence</div>
         </div>
-
-        <div
+    
+       <div
           className="nav"
           style={{ overflowY: "auto", flex: 1, minHeight: 0 }}
         >
-        <NavItem to="/profile" label="My Profile" icon={ICONS.users} />
-          {role === "auditor" ? (
-            <NavItem
-              to="/compliance"
-              label="Compliance"
-              icon={ICONS.compliance}
+          <NavItem to="/profile" label="My Profile" icon={ICONS.users} />
+          {NAV_STANDALONE.filter((item) => item.roles.includes(role)).map((item) => (
+            <NavItem key={item.to} to={item.to} label={item.label} icon={ICONS[item.icon]} />
+          ))}
+          {NAV_GROUPS.map((group) => (
+            <NavGroup
+              key={group.key}
+              group={group}
+              role={role}
+              expanded={!!expandedGroups[group.key]}
+              onToggle={toggleGroup}
             />
-          ) : (
-            <>
-              <NavItem to="/" label="Overview" icon={ICONS.overview} />
-              <NavItem to="/assets" label="Assets" icon={ICONS.assets} />
-              <NavItem
-                to="/backlog"
-                label="Patch Backlog"
-                icon={ICONS.backlog}
-              />
-              <NavItem
-                to="/compliance"
-                label="Compliance"
-                icon={ICONS.compliance}
-              />
-              <NavItem to="/vulnerabilities" label="Vulnerabilities" icon={ICONS.compliance} />
-              <NavItem to="/network" label="Network Map" icon={ICONS.network} />
-              <NavItem to="/tickets" label="Tickets" icon={ICONS.tickets} />
-              <NavItem to="/patch-log" label="Patch Log" icon={ICONS.evaluation} />
-              <NavItem to="/groups" label="Asset Groups" icon={ICONS.groups} />
-              <NavItem to="/discovery" label="Device Discovery" icon={ICONS.network} />
-              <NavItem to="/user-activity" label="User Activity" icon={ICONS.users} />
-              <NavItem to="/audit-log" label="Audit Log" icon={ICONS.users} />
-              {role === "admin" && (
-                <>
-                  <NavItem
-                    to="/machines"
-                    label="Machines"
-                    icon={ICONS.assets}
-                  />
-                  <NavItem
-                    to="/users"
-                    label="User Management"
-                    icon={ICONS.users}
-                  />
-                  <NavItem
-                    to="/system-ops" 
-                    label="System Operations" 
-                    icon={ICONS.evaluation} />
-                </>
-              )}
-            </>
-          )}
-        </div>
+          ))}
+      </div> 
 
         <div className="sidebarFooter">
           <div
@@ -686,7 +822,7 @@ export default function Layout({ title, rightControls, children }) {
             className="mono"
             style={{ fontSize: 10, color: "var(--muted)", marginTop: 10 }}
           >
-            API: 10.10.20.30:5000
+            API: 192.168.0.30:5000
           </div>
         </div>
       </aside>
@@ -694,11 +830,12 @@ export default function Layout({ title, rightControls, children }) {
       <main className="main">
         <div className="topbar" style={{ position: "relative", zIndex: 100 }}>
           <div className="title">{title}</div>
-          <div
+           <div
             className="controls"
             style={{ display: "flex", alignItems: "center", gap: 10 }}
           >
             {rightControls}
+            <ThemeToggle />
             <NotificationBell loginAt={loginAt} />
           </div>
         </div>

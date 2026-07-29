@@ -5,63 +5,54 @@ const Compliance   = require("../models/Compliance");
 const AssetMeta    = require("../models/AssetMeta");
 const CVEMatch     = require("../models/CVEMatch");
 const ComplianceCheck = require("../models/ComplianceCheck");
+const { requireRole } = require("../middleware/authMiddleware");
+const { computeRisk } = require("./risk");
+const Agent = require("../models/Agent");
+const { getVulnMatchesForAgent } = require("./vulnerabilities");
 
-const W_CVSS    = 0.55;
-const W_COMP    = 0.45;
-const PATCH_MAX = 50;
-const COMP_MAX  = 300;
 
-function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
-function hostnameRegex(h)   { return { $regex: new RegExp(`^${h}$`, "i") }; }
-
-function getAgeFactor(collectedAt) {
-  if (!collectedAt) return 1.0;
-  const days = Math.floor((Date.now() - new Date(collectedAt).getTime()) / 86400000);
-  if (days < 7)  return 1.0;
-  if (days < 30) return 1.1;
-  if (days < 60) return 1.2;
-  if (days < 90) return 1.35;
-  return 1.5;
-}
+function hostnameRegex(h) { return { $regex: new RegExp(`^${h}$`, "i") }; }
 
 async function computeScore(hostname) {
   const re = hostnameRegex(hostname);
-  const [patch, compliance, meta, cveMatches, liveChecks] = await Promise.all([
+  const [patch, compliance, meta, cveMatches, liveChecks, agent] = await Promise.all([
     Patch.findOne({ assetHostname: re }).sort({ collectedAt: -1 }),
     Compliance.findOne({ assetHostname: re }).sort({ collectedAt: -1 }),
     AssetMeta.findOne({ hostname: re }),
     CVEMatch.find({ assetHostname: re }),
     ComplianceCheck.countDocuments({ assetHostname: re, result: "failed" }),
+    Agent.findOne({ hostname: re }).lean(),
   ]);
+  const vulnMatches = agent?.wazuhId ? await getVulnMatchesForAgent(agent.wazuhId) : [];
 
-  const missingCount = patch?.missingCount ?? 0;
   const failedCount  = liveChecks || compliance?.failedCount || 0;
-  const criticality  = meta?.criticality ?? 0.5;
+  const missingCount = patch?.missingCount ?? 0;
   const cveCount     = cveMatches?.length ?? 0;
   const patchAgeDays = patch?.collectedAt
     ? Math.floor((Date.now() - new Date(patch.collectedAt).getTime()) / 86400000)
     : 0;
 
-  const ageFactor  = getAgeFactor(patch?.collectedAt);
-  const maxCVSS    = cveMatches?.length ? Math.max(...cveMatches.map(c => c.cvssScore || 0)) : 0;
-  const cvssValue  = maxCVSS > 0 ? maxCVSS : (missingCount / PATCH_MAX) * 10;
-  const cvssFactor = clamp((cvssValue * ageFactor) / 10.0, 0, 1);
-  const compFactor = clamp(failedCount / COMP_MAX, 0, 1);
-  const critMult   = 0.5 + (criticality * 0.5);
-  const score      = clamp(Math.round((W_CVSS * cvssFactor + W_COMP * compFactor) * critMult * 100), 0, 100);
+const risk = await computeRisk({
+    patch,
+    compliance: { failedCount },
+    meta,
+    cveMatches,
+    vulnMatches,
+  });
 
-  let priority;
-  if      (score >= 75) priority = "Critical";
-  else if (score >= 50) priority = "High";
-  else if (score >= 25) priority = "Medium";
-  else                  priority = "Low";
-
-  return { score, priority, missingCount, failedCount, cveCount, patchAgeDays };
+  return {
+    score: risk.score,
+    priority: risk.priority,
+    missingCount,
+    failedCount,
+    cveCount,
+    patchAgeDays,
+  };
 }
 
 // ── POST /api/snapshots/record — save today's snapshot for all assets ─────────
 // Call this once per day (manually or via cron)
-router.post("/record", async (req, res) => {
+router.post("/record", requireRole("admin"), async (req, res) => {
   try {
     const metas = await AssetMeta.find({});
     const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"

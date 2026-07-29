@@ -1,7 +1,8 @@
 const router = require("express").Router();
 const { NodeSSH } = require("node-ssh");
-const { execSync } = require("child_process");
 const Agent = require("../models/Agent");
+const { requireRole } = require("../middleware/authMiddleware");
+
 // ── Asset configs ─────────────────────────────────────────────────────────────
 let SSH_CONFIG = {
   kali: {
@@ -10,24 +11,6 @@ let SSH_CONFIG = {
     username: "stager",
     privateKeyPath: "/home/patch/.ssh/patch_key",
   },
-};
-
-let WINRM_CONFIG = {
-  dc1: {
-    host: "192.168.0.10",
-    username: "Administrator",
-    password: "15422035s$",
-  },
-  "hq-staff-01": {
-    host: "192.168.0.50",
-    username: "hqSaacid",
-    password: "passwordS$",
-  },
-  "desktop-u7sean6":{
-    host: "192.168.0.102",
-    username: "hp",
-    password: "2122",
- }
 };
 
 // Refresh configs from the database so DB-added machines work without code edits
@@ -43,12 +26,6 @@ async function refreshConfigsFromDB() {
           username: a.username,
           privateKeyPath: a.sshKeyPath,
         };
-      } else if (a.os === "windows" && a.deployMethod === "winrm") {
-        WINRM_CONFIG[key] = {
-          host: a.ip,
-          username: a.username,
-          password: a.password,
-        };
       }
     }
   } catch (e) {
@@ -56,101 +33,8 @@ async function refreshConfigsFromDB() {
   }
 }
 
-// ── Run PowerShell via pywinrm ────────────────────────────────────────────────
-function runPowerShell(config, psCommand) {
-  // Escape single quotes in the PS command for Python string
-  const escaped = psCommand
-    .replace(/\\/g, "\\\\")
-    .replace(/'/g, "\\'")
-    .replace(/\n/g, "\\n");
-
-  const pythonScript = `
-import winrm, sys
-try:
-    s = winrm.Session('${config.host}', auth=('${config.username}', '${config.password}'), transport='basic')
-    r = s.run_ps('${escaped}')
-    print(r.std_out.decode('utf-8', errors='replace'))
-    if r.std_err:
-        print('STDERR:', r.std_err.decode('utf-8', errors='replace'), file=sys.stderr)
-    sys.exit(r.status_code)
-except Exception as e:
-    print(f'ERROR: {e}', file=sys.stderr)
-    sys.exit(1)
-`;
-
-  try {
-    const output = execSync(
-      `python3 -c "${pythonScript.replace(/"/g, '\\"')}"`,
-      {
-        timeout: 600000,
-        encoding: "utf8",
-      },
-    );
-    return { success: true, output };
-  } catch (e) {
-    return {
-      success: false,
-      output: (e.stdout || "") + (e.stderr || "") || e.message,
-    };
-  }
-}
-
-// ── Better approach: write to temp file ──────────────────────────────────────
-function runPowerShellViaTempFile(config, psCommand) {
-  const fs = require("fs");
-  const path = require("path");
-  const os = require("os");
-
-  const scriptFile = path.join(os.tmpdir(), `winrm_${Date.now()}.py`);
-
-  const pythonScript = `import winrm, sys
-config_host = ${JSON.stringify(config.host)}
-config_user = ${JSON.stringify(config.username)}
-config_pass = ${JSON.stringify(config.password)}
-ps_command  = ${JSON.stringify(psCommand)}
-try:
-    s = winrm.Session(config_host, auth=(config_user, config_pass), transport='basic')
-    r = s.run_ps(ps_command)
-    out = r.std_out.decode('utf-8', errors='replace')
-    err = r.std_err.decode('utf-8', errors='replace')
-    print(out)
-    if err and err.strip():
-        print('STDERR:', err)
-    sys.exit(r.status_code)
-except Exception as e:
-    print(f'ERROR: {e}', file=sys.stderr)
-    sys.exit(1)
-`;
-
-  fs.writeFileSync(scriptFile, pythonScript);
-  try {
-    const { spawnSync } = require("child_process");
-    const result = spawnSync("python3", [scriptFile], {
-      timeout: 600000,
-      encoding: "utf8",
-      maxBuffer: 1024 * 1024,
-    });
-    fs.unlinkSync(scriptFile);
-    const out = (result.stdout || "").trim();
-    const err = (result.stderr || "").trim();
-    // CLIXML progress noise in stderr is normal for WinRM — not a real error
-    const realError =
-      err && !err.includes("CLIXML") && !err.includes("progress");
-    const success = result.status === 0 || (out.length > 0 && !realError);
-    return { success, output: out || err };
-  } catch (e) {
-    try {
-      fs.unlinkSync(scriptFile);
-    } catch {}
-    return {
-      success: false,
-      output: (e.stdout || "") + (e.stderr || "") || e.message,
-    };
-  }
-}
-
 // ── POST /api/deploy/patch ────────────────────────────────────────────────────
-router.post("/patch", async (req, res) => {
+router.post("/patch", requireRole("admin", "patch-operator"), async (req, res) => {
   const { hostname, package: pkg } = req.body;
 
   if (!hostname || !pkg) {
@@ -171,7 +55,6 @@ router.post("/patch", async (req, res) => {
 
       const pkgName = pkg.split("/")[0].trim();
 
-      // Check if apt is already running
       const lockCheck = await ssh.execCommand(
         `sudo lsof /var/lib/dpkg/lock-frontend 2>/dev/null | grep -c lock-frontend || echo 0`,
         { timeout: 5000 },
@@ -189,11 +72,13 @@ router.post("/patch", async (req, res) => {
         });
       }
 
-        const AgentCommand = require("../models/AgentCommand");
+      const AgentCommand = require("../models/AgentCommand");
       const cmd = await AgentCommand.create({
         hostname,
         kb: pkgName,
         status: "running",
+        triggeredBy: req.user?.username || "unknown",
+        triggeredById: req.user?._id,
       });
 
       const result = await ssh.execCommand(
@@ -201,7 +86,6 @@ router.post("/patch", async (req, res) => {
         { timeout: 300000 },
       );
 
-      // Trigger kali collector to update count
       try {
         await ssh.execCommand(
           "sudo systemctl restart riskpatch-linux-collector.service 2>/dev/null || true",
@@ -240,12 +124,13 @@ router.post("/patch", async (req, res) => {
       return res.status(500).json({ ok: false, error: e.message });
     }
   }
-// ── Windows via agent polling (works for ANY registered Windows machine) ────
+
+  // ── Windows via agent polling (works for ANY registered Windows machine) ────
   const agentDoc = await Agent.findOne({
     hostname: { $regex: new RegExp(`^${hostname}$`, "i") },
   }).lean();
 
-  if (WINRM_CONFIG[hostKey] || (agentDoc && agentDoc.os === "windows")) {
+  if (agentDoc && agentDoc.os === "windows") {
     const kbMatch = pkg.match(/KB\d+/i);
     if (!kbMatch) {
       return res.status(400).json({
@@ -256,7 +141,12 @@ router.post("/patch", async (req, res) => {
     const kb = kbMatch[0].toUpperCase();
 
     const AgentCommand = require("../models/AgentCommand");
-    const cmd = await AgentCommand.create({ hostname, kb });
+    const cmd = await AgentCommand.create({
+      hostname,
+      kb,
+      triggeredBy: req.user?.username || "unknown",
+      triggeredById: req.user?._id,
+    });
 
     return res.json({
       ok: true,
@@ -274,7 +164,7 @@ router.post("/patch", async (req, res) => {
 });
 
 // ── GET /api/deploy/status/:hostname ─────────────────────────────────────────
-router.get("/status/:hostname", async (req, res) => {
+router.get("/status/:hostname", requireRole("admin", "compliance-officer", "patch-operator", "analyst"), async (req, res) => {
   await refreshConfigsFromDB();
   const hostKey = req.params.hostname.toLowerCase();
 
@@ -294,17 +184,6 @@ router.get("/status/:hostname", async (req, res) => {
     }
   }
 
-  if (WINRM_CONFIG[hostKey]) {
-    const config = WINRM_CONFIG[hostKey];
-    const result = runPowerShellViaTempFile(config, "Write-Output ping");
-    return res.json({
-      ok: true,
-      reachable: result.success,
-      method: "winrm",
-      reason: result.success ? null : result.output,
-    });
-  }
-
   return res.json({
     ok: true,
     reachable: false,
@@ -313,13 +192,11 @@ router.get("/status/:hostname", async (req, res) => {
 });
 
 // ── POST /api/deploy/restart ─────────────────────────────────────────────────
-router.post("/restart", async (req, res) => {
+router.post("/restart", requireRole("admin", "patch-operator"), async (req, res) => {
   try {
     const { hostname } = req.body;
     if (!hostname) return res.status(400).json({ ok: false, error: "hostname required" });
 
-    // Block restart on DC1 — it's a domain controller
-    // Block restart on servers / domain controllers based on their role
     const agentDoc = await Agent.findOne({ hostname }).lean();
     const blockedRoles = ["domain controller", "server"];
     if (agentDoc && blockedRoles.includes((agentDoc.role || "").toLowerCase())) {
@@ -328,11 +205,14 @@ router.post("/restart", async (req, res) => {
         error: `Restart not allowed on ${hostname} (role: ${agentDoc.role}). Schedule manually during a maintenance window.`,
       });
     }
+
     const AgentCommand = require("../models/AgentCommand");
     const cmd = await AgentCommand.create({
       hostname,
       kb: "RESTART",
       type: "restart",
+      triggeredBy: req.user?.username || "unknown",
+      triggeredById: req.user?._id,
     });
 
     return res.json({
@@ -347,7 +227,7 @@ router.post("/restart", async (req, res) => {
 });
 
 // ── POST /api/deploy/apt-update ───────────────────────────────────────────────
-router.post("/apt-update", async (req, res) => {
+router.post("/apt-update", requireRole("admin", "patch-operator"), async (req, res) => {
   const { hostname } = req.body;
   if (!hostname) return res.status(400).json({ ok: false, error: "hostname required" });
   await refreshConfigsFromDB();

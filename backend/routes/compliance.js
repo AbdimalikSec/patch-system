@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const Compliance      = require("../models/Compliance");
 const ComplianceCheck = require("../models/ComplianceCheck");
+const { requireRole } = require("../middleware/authMiddleware");
 
 function escapeRegex(str = "") {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -8,7 +9,7 @@ function escapeRegex(str = "") {
 
 // GET /api/compliance/latest/:hostname
 // Returns the latest compliance summary doc (used by AssetDetails header info)
-router.get("/latest/:hostname", async (req, res) => {
+router.get("/latest/:hostname", requireRole("admin", "compliance-officer", "analyst", "auditor"), async (req, res) => {
   try {
     const rx  = new RegExp(`^${escapeRegex(req.params.hostname)}$`, "i");
     const doc = await Compliance.findOne({ assetHostname: { $regex: rx } })
@@ -23,7 +24,7 @@ router.get("/latest/:hostname", async (req, res) => {
 
 // GET /api/compliance/checks/:hostname
 // Returns all compliance checks for an asset, sorted failed first
-router.get("/checks/:hostname", async (req, res) => {
+router.get("/checks/:hostname", requireRole("admin", "compliance-officer", "analyst", "auditor"), async (req, res) => {
   try {
     const rx = new RegExp(`^${escapeRegex(req.params.hostname)}$`, "i");
     const checks = await ComplianceCheck.find({ assetHostname: { $regex: rx } })
@@ -43,7 +44,7 @@ router.get("/checks/:hostname", async (req, res) => {
 
 // GET /api/compliance/checks/:hostname/failed
 // Returns only failed checks
-router.get("/checks/:hostname/failed", async (req, res) => {
+router.get("/checks/:hostname/failed", requireRole("admin", "compliance-officer", "analyst", "auditor"), async (req, res) => {
   try {
     const rx = new RegExp(`^${escapeRegex(req.params.hostname)}$`, "i");
     const checks = await ComplianceCheck.find({

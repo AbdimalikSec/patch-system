@@ -5,7 +5,9 @@ const Compliance = require("../models/Compliance");
 const AssetMeta  = require("../models/AssetMeta");
 const CVEMatch   = require("../models/CVEMatch");
 const ComplianceCheck = require("../models/ComplianceCheck");
-
+const { requireAuth } = require("../middleware/authMiddleware");
+const Agent = require("../models/Agent");
+const { getVulnMatchesForAgent } = require("./vulnerabilities");
 // ─────────────────────────────────────────────────────────────────────────────
 // RISK ENGINE v4 — CVE/CVSS + Patch Age Integrated
 //
@@ -94,8 +96,7 @@ function computeAgeFactor(collectedAt) {
 }
 
 // Exposure multiplier — how reachable is this asset by an attacker
-
-async function computeRisk({ patch, compliance, meta, cveMatches }) {
+async function computeRisk({ patch, compliance, meta, cveMatches, vulnMatches }) {
   const missingCount    = patch?.missingCount     ?? 0;
   const failedCount     = compliance?.failedCount ?? 0;
   const criticality     = meta?.criticality       ?? 0.5;
@@ -112,17 +113,41 @@ async function computeRisk({ patch, compliance, meta, cveMatches }) {
     computeAgeFactor(patch?.collectedAt);
 
   // ── CVSSFactor with age boost ─────────────────────────────────────────────
-  let cvssSource = "patch_count_fallback";
+    let cvssSource = "patch_count_fallback";
   let maxCVSS    = 0;
   let cvssCount  = 0;
 
   if (cveMatches && cveMatches.length > 0) {
     cvssCount = cveMatches.length;
     maxCVSS   = Math.max(...cveMatches.map(c => c.cvssScore || 0));
-    cvssSource = `${cvssCount} CVEs (max CVSS: ${maxCVSS.toFixed(1)})`;
+    cvssSource = `${cvssCount} CVEs from missing patches (max CVSS: ${maxCVSS.toFixed(1)})`;
   }
 
+  // ── Real installed-software vulnerabilities (Wazuh vulnerability scanner) ──
+  // These are separate from the patch-derived CVEs above: they're CVEs found
+  // directly in installed software (browsers, runtimes, libraries), independent
+  // of whether a Windows/apt update is missing. The worse of the two sources
+  // drives the CVSS input, since either can represent the real worst-case risk.
+  const vulnCount    = vulnMatches ? vulnMatches.length : 0;
+  const maxVulnCVSS  = vulnCount > 0 ? Math.max(...vulnMatches.map(v => v.cvssScore || 0)) : 0;
+  const vulnCritical = vulnMatches ? vulnMatches.filter(v => (v.severity || "").toLowerCase() === "critical").length : 0;
+  const vulnHigh     = vulnMatches ? vulnMatches.filter(v => (v.severity || "").toLowerCase() === "high").length : 0;
+
+  if (maxVulnCVSS > maxCVSS) {
+    maxCVSS = maxVulnCVSS;
+    cvssSource = `${vulnCount} installed-software vulnerabilities (Wazuh scanner, max CVSS: ${maxVulnCVSS.toFixed(1)})`;
+  } else if (vulnCount > 0) {
+    cvssSource += ` + ${vulnCount} installed-software vulnerabilities (max CVSS ${maxVulnCVSS.toFixed(1)})`;
+  }
+
+  // Volume boost — many critical/high installed-software vulns raise risk even
+  // if none individually beats the worst patch-derived CVE. Capped, same
+  // pattern as the existing exploit boost below.
+  const vulnBoost = 1 + Math.min(vulnCritical, 5) * 0.03 + Math.min(vulnHigh, 5) * 0.015;
+
   const cvssValue  = maxCVSS > 0 ? maxCVSS : (missingCount / PATCH_MAX) * 10;
+
+
   // Apply age factor to CVSS value before normalising
   const cvssAged   = cvssValue * ageFactor;
 
@@ -131,7 +156,7 @@ async function computeRisk({ patch, compliance, meta, cveMatches }) {
   const hasExploits  = exploitCVEs.length > 0;
   // If any matched CVE has a known public exploit, boost CVSS factor by 25%
   const exploitBoost = hasExploits ? 1.25 : 1.0;
-  const cvssFactor   = clamp((cvssAged * exploitBoost) / 10.0, 0, 1);
+  const cvssFactor   = clamp((cvssAged * exploitBoost * vulnBoost) / 10.0, 0, 1);
 
   // ── ComplianceFactor ──────────────────────────────────────────────────────
   const complianceFactor = clamp(failedCount / COMP_MAX, 0, 1);
@@ -166,6 +191,9 @@ async function computeRisk({ patch, compliance, meta, cveMatches }) {
     `Network exposure: ${exposureLevel} (multiplier=${exposureMult}) — ${exposureLevel === 'internet' ? 'directly reachable from internet, highest attack surface' : exposureLevel === 'dmz' ? 'DMZ-protected, partially exposed' : exposureLevel === 'isolated' ? 'isolated network, lowest attack surface' : 'internal network only'}`,
 
     `CVE data: ${cvssSource}`,
+     vulnCount > 0
+      ? `Installed-software vulnerabilities: ${vulnCount} found (${vulnCritical} critical, ${vulnHigh} high) → volume boost ×${vulnBoost.toFixed(3)}`
+      : `Installed-software vulnerabilities: none found`,
     `Patch age: ${ageLabel}`,
     hasExploits
       ? `⚠️  EXPLOIT ALERT: ${exploitCVEs.length} CVE(s) have known public exploit code — CVSS boosted by 25%`
@@ -184,6 +212,11 @@ async function computeRisk({ patch, compliance, meta, cveMatches }) {
     maxCVSS,
     cvssCount,
     cvssSource,
+    vulnCount,
+    maxVulnCVSS,
+    vulnCritical,
+    vulnHigh,
+    vulnBoost: parseFloat(vulnBoost.toFixed(4)),
     ageFactor,
     patchAgeDays,
     ageLabel,
@@ -205,28 +238,30 @@ router.get("/latest/:hostname", async (req, res) => {
   try {
     const hostname = req.params.hostname;
     const re = hostnameRegex(hostname);
-
-    const [patch, compliance, meta, cveMatches] = await Promise.all([
+     
+      const [patch, failedCount, meta, cveMatches, agent] = await Promise.all([
       Patch.findOne({ assetHostname: re }).sort({ collectedAt: -1 }),
-      Compliance.findOne({ assetHostname: re }).sort({ collectedAt: -1 }),
+      ComplianceCheck.countDocuments({ assetHostname: re, result: "failed" }),
       AssetMeta.findOne({ hostname: re }),
       CVEMatch.find({ assetHostname: re }),
+      Agent.findOne({ hostname: re }).lean(),
     ]);
+    const vulnMatches = agent?.wazuhId ? await getVulnMatchesForAgent(agent.wazuhId) : [];
 
-    const risk = await computeRisk({ patch, compliance, meta, cveMatches });
+    const risk = await computeRisk({ patch, compliance: { failedCount }, meta, cveMatches, vulnMatches });
 
     res.json({
       ok: true,
       hostname,
       risk,
-      inputs: {
+        inputs: {
         missingCount:          patch?.missingCount     ?? 0,
-        failedCount:           compliance?.failedCount ?? 0,
+        failedCount:           failedCount             ?? 0,
         criticality:           meta?.criticality       ?? 0.5,
         role:                  meta?.role              ?? "workstation",
         cveCount:              cveMatches?.length      ?? 0,
+        vulnCount:             vulnMatches?.length      ?? 0,
         patchCollectedAt:      patch?.collectedAt      ?? null,
-        complianceCollectedAt: compliance?.collectedAt ?? null,
         patchAgeDays:          patch?.collectedAt
           ? Math.floor((Date.now() - new Date(patch.collectedAt).getTime()) / (1000 * 60 * 60 * 24))
           : null,
@@ -246,13 +281,16 @@ router.get("/all", async (req, res) => {
 
     for (const meta of metas) {
       const re = hostnameRegex(meta.hostname);
-      const [patch, compliance, cveMatches] = await Promise.all([
-        Patch.findOne({ assetHostname: re }).sort({ collectedAt: -1 }),
-        Compliance.findOne({ assetHostname: re }).sort({ collectedAt: -1 }),
-        CVEMatch.find({ assetHostname: re }),
-      ]);
 
-      const risk = await computeRisk({ patch, compliance, meta, cveMatches });
+       const [patch, failedCount, cveMatches, agent] = await Promise.all([
+        Patch.findOne({ assetHostname: re }).sort({ collectedAt: -1 }),
+        ComplianceCheck.countDocuments({ assetHostname: re, result: "failed" }),
+        CVEMatch.find({ assetHostname: re }),
+        Agent.findOne({ hostname: re }).lean(),
+      ]);
+      const vulnMatches = agent?.wazuhId ? await getVulnMatchesForAgent(agent.wazuhId) : [];
+
+      const risk = await computeRisk({ patch, compliance: { failedCount }, meta, cveMatches, vulnMatches });
 
       results.push({
         hostname:    meta.hostname,
@@ -263,6 +301,7 @@ router.get("/all", async (req, res) => {
           missingCount: patch?.missingCount     ?? 0,
           failedCount:  compliance?.failedCount ?? 0,
           cveCount:     cveMatches?.length      ?? 0,
+          vulnCount:    vulnMatches?.length     ?? 0,
           patchAgeDays: patch?.collectedAt
             ? Math.floor((Date.now() - new Date(patch.collectedAt).getTime()) / (1000 * 60 * 60 * 24))
             : null,
@@ -278,7 +317,8 @@ router.get("/all", async (req, res) => {
   }
 });
 
-router.get("/cve/:hostname", async (req, res) => {
+
+router.get("/cve/:hostname", requireAuth, async (req, res) => {
   try {
     const { hostname } = req.params;
     const rx = new RegExp("^" + hostname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i");

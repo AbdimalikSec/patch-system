@@ -35,6 +35,14 @@ function resultBadge(result) {
   return "badge";
 }
 
+function severityBadge(sev) {
+  const s = (sev || "").toLowerCase();
+  if (s === "critical" || s === "high") return "badge critical";
+  if (s === "medium") return "badge medium";
+  if (s === "low") return "badge low";
+  return "badge";
+}
+
 function ticketStatusColor(s) {
   return (
     {
@@ -94,6 +102,18 @@ export default function AssetDetails() {
   const [expandedPkg, setExpandedPkg] = useState(null);
   const [selectedCheck, setSelectedCheck] = useState(null);
 
+  // ── New: installed-software vulnerabilities (Wazuh scanner) ────────────────
+  const [vulnData, setVulnData] = useState([]);
+  const [vulnLoading, setVulnLoading] = useState(false);
+  const [vulnErr, setVulnErr] = useState("");
+  const [vulnSeverityFilter, setVulnSeverityFilter] = useState("all");
+  const [vulnQuery, setVulnQuery] = useState("");
+
+  // ── New: compliance history (transition timeline) ──────────────────────────
+  const [historyData, setHistoryData] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyErr, setHistoryErr] = useState("");
+
   const loadTickets = useCallback(async () => {
     try {
       const [mapRes, listRes] = await Promise.all([
@@ -103,6 +123,40 @@ export default function AssetDetails() {
       setTicketMap(mapRes.data?.data || {});
       setTickets(listRes.data?.data || []);
     } catch {}
+  }, [hostname]);
+
+  const loadVulnerabilities = useCallback(async () => {
+    try {
+      setVulnLoading(true);
+      setVulnErr("");
+      const res = await axios.get(
+        `${API}/api/vulnerabilities/${encodeURIComponent(hostname)}`,
+      );
+      setVulnData(res.data?.data || []);
+    } catch (e) {
+      setVulnErr(
+        e?.response?.data?.error || "Failed to load vulnerability data",
+      );
+    } finally {
+      setVulnLoading(false);
+    }
+  }, [hostname]);
+
+  const loadHistory = useCallback(async () => {
+    try {
+      setHistoryLoading(true);
+      setHistoryErr("");
+      const res = await axios.get(
+        `${API}/api/compliance-history/${encodeURIComponent(hostname)}`,
+      );
+      setHistoryData(res.data?.data || []);
+    } catch (e) {
+      setHistoryErr(
+        e?.response?.data?.error || "Failed to load compliance history",
+      );
+    } finally {
+      setHistoryLoading(false);
+    }
   }, [hostname]);
 
   useEffect(() => {
@@ -146,6 +200,18 @@ export default function AssetDetails() {
   useEffect(() => {
     loadTickets();
   }, [loadTickets]);
+
+  // Lazy-load vulnerabilities / history only when their tab is first opened,
+  // so a normal page visit doesn't always pay for two extra API calls.
+  useEffect(() => {
+    if (tab === "vulnerabilities" && vulnData.length === 0 && !vulnLoading) {
+      loadVulnerabilities();
+    }
+    if (tab === "history" && historyData.length === 0 && !historyLoading) {
+      loadHistory();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   const risk = riskRes?.risk || { score: 0, priority: "Low", reasons: [] };
   const patch = patchRes?.data || null;
@@ -214,6 +280,34 @@ export default function AssetDetails() {
   useEffect(() => {
     setCisPage(1);
   }, [cisQuery, resultFilter]);
+
+  // ── Vulnerabilities: filtering ──────────────────────────────────────────────
+  const vulnCounts = useMemo(() => {
+    const out = { critical: 0, high: 0, medium: 0, low: 0, total: vulnData.length };
+    for (const v of vulnData) {
+      const s = (v.severity || "").toLowerCase();
+      if (out[s] !== undefined) out[s]++;
+    }
+    return out;
+  }, [vulnData]);
+
+  const filteredVulns = useMemo(() => {
+    let list = vulnData;
+    if (vulnSeverityFilter !== "all") {
+      list = list.filter(
+        (v) => (v.severity || "").toLowerCase() === vulnSeverityFilter,
+      );
+    }
+    const q = vulnQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (v) =>
+          String(v.cve || "").toLowerCase().includes(q) ||
+          String(v.package || "").toLowerCase().includes(q),
+      );
+    }
+    return [...list].sort((a, b) => (b.cvssScore || 0) - (a.cvssScore || 0));
+  }, [vulnData, vulnSeverityFilter, vulnQuery]);
 
    const openTickets = tickets.filter((t) => t.status === "open").length;
   const inProgressCount = tickets.filter(
@@ -285,7 +379,14 @@ export default function AssetDetails() {
       });
     }
 
-    // Step 4: verification
+    // Step 4: installed-software vulnerabilities, if any critical/high exist
+    if (vulnCounts.critical > 0 || vulnCounts.high > 0) {
+      plan.push({
+        text: `${vulnCounts.critical + vulnCounts.high} critical/high installed-software vulnerabilit${vulnCounts.critical + vulnCounts.high > 1 ? "ies" : "y"} found (separate from missing OS patches). Review the Vulnerabilities tab and update or remove the affected software.`,
+      });
+    }
+
+    // Step 5: verification
     plan.push({
       text: "After applying patches or fixing compliance issues, run a rescan (remediate_and_rescan.sh) or wait for the next scheduled scan, then verify the risk score decreases on this page.",
     });
@@ -298,6 +399,7 @@ export default function AssetDetails() {
     cveMatches,
     openTickets,
     inProgressCount,
+    vulnCounts,
   ]);
 
 
@@ -521,6 +623,12 @@ export default function AssetDetails() {
               Compliance (CIS)
             </TabButton>
             <TabButton
+              active={tab === "history"}
+              onClick={() => setTab("history")}
+            >
+              Compliance History
+            </TabButton>
+            <TabButton
               active={tab === "tickets"}
               onClick={() => setTab("tickets")}
             >
@@ -532,6 +640,13 @@ export default function AssetDetails() {
             <TabButton active={tab === "cve"} onClick={() => setTab("cve")}>
               CVE Intelligence{" "}
               {cveMatches.length > 0 ? `(${cveMatches.length})` : ""}
+            </TabButton>
+            <TabButton
+              active={tab === "vulnerabilities"}
+              onClick={() => setTab("vulnerabilities")}
+            >
+              Vulnerabilities{" "}
+              {vulnData.length > 0 ? `(${vulnData.length})` : ""}
             </TabButton>
             <TabButton active={tab === "plan"} onClick={() => setTab("plan")}>
               Remediation Plan
@@ -754,6 +869,128 @@ export default function AssetDetails() {
             </div>
           )}
 
+          {/* ── Compliance History Tab ── */}
+          {tab === "history" && (
+            <div className="card">
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 20,
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 16 }}>
+                    Compliance History
+                  </div>
+                  <div className="muted" style={{ marginTop: 4, fontSize: 13 }}>
+                    Every genuine pass/fail transition for this machine's CIS
+                    checks — independent of whether a ticket was created.
+                  </div>
+                </div>
+                <button
+                  className="btn"
+                  onClick={loadHistory}
+                  style={{ fontSize: 12, padding: "6px 14px" }}
+                >
+                  Refresh
+                </button>
+              </div>
+
+              {historyErr && (
+                <div
+                  style={{
+                    padding: "10px 16px",
+                    borderRadius: 8,
+                    marginBottom: 16,
+                    background: "hsla(350,100%,65%,0.1)",
+                    border: "1px solid hsla(350,100%,65%,0.3)",
+                    color: "hsl(350,100%,65%)",
+                    fontSize: 13,
+                  }}
+                >
+                  {historyErr}
+                </div>
+              )}
+
+              {historyLoading && (
+                <div className="muted" style={{ padding: 20 }}>
+                  Loading history...
+                </div>
+              )}
+
+              {!historyLoading && !historyErr && historyData.length === 0 && (
+                <div className="muted" style={{ padding: 20 }}>
+                  No transitions recorded yet. History is written the next
+                  time a check's result genuinely changes (a fix or a
+                  regression), not on every scan.
+                </div>
+              )}
+
+              {!historyLoading && historyData.length > 0 && (
+                <div className="tableWrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th style={{ width: 90 }}>Check</th>
+                        <th>Title</th>
+                        <th style={{ width: 200 }}>Transition</th>
+                        <th style={{ width: 160 }}>When</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historyData.map((h) => (
+                        <tr key={h._id}>
+                          <td
+                            className="mono"
+                            style={{ color: "var(--accent)", fontSize: 12 }}
+                          >
+                            {h.checkId}
+                          </td>
+                          <td style={{ fontSize: 13, fontWeight: 500 }}>
+                            {h.title}
+                          </td>
+                          <td>
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                              }}
+                            >
+                              {h.fromResult ? (
+                                <span className={resultBadge(h.fromResult)}>
+                                  {h.fromResult}
+                                </span>
+                              ) : (
+                                <span
+                                  style={{
+                                    fontSize: 11,
+                                    color: "var(--muted)",
+                                  }}
+                                >
+                                  (first seen)
+                                </span>
+                              )}
+                              <span style={{ color: "var(--muted)" }}>→</span>
+                              <span className={resultBadge(h.toResult)}>
+                                {h.toResult}
+                              </span>
+                            </div>
+                          </td>
+                          <td style={{ fontSize: 12, color: "var(--muted)" }}>
+                            {new Date(h.changedAt).toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── Tickets Tab ── */}
           {tab === "tickets" && (
             <div className="card">
@@ -910,8 +1147,7 @@ export default function AssetDetails() {
             </div>
           )}
 
-          {/* ── Risk Tab ── */}
-          {/* ── CVE Intelligence Tab ── */}
+          {/* ── CVE Intelligence Tab (patch-derived CVEs) ── */}
           {tab === "cve" && (
             <div className="card">
               <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 16 }}>
@@ -1166,6 +1402,142 @@ export default function AssetDetails() {
                       );
                     })}
                 </>
+              )}
+            </div>
+          )}
+
+          {/* ── Vulnerabilities Tab (real installed-software CVEs, Wazuh scanner) ── */}
+          {tab === "vulnerabilities" && (
+            <div className="card">
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 16,
+                  flexWrap: "wrap",
+                  marginBottom: 20,
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 16 }}>
+                    Installed-Software Vulnerabilities
+                  </div>
+                  <div className="muted" style={{ marginTop: 6, fontSize: 13 }}>
+                    From Wazuh's vulnerability scanner — CVEs found in software
+                    actually installed on this machine, independent of missing
+                    OS patches.
+                  </div>
+                </div>
+                <input
+                  className="input"
+                  placeholder="Search CVE ID or package..."
+                  value={vulnQuery}
+                  onChange={(e) => setVulnQuery(e.target.value)}
+                  style={{ minWidth: 280 }}
+                />
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  marginBottom: 20,
+                  flexWrap: "wrap",
+                }}
+              >
+                {[
+                  { key: "all", label: `All (${vulnCounts.total})` },
+                  { key: "critical", label: `Critical (${vulnCounts.critical})` },
+                  { key: "high", label: `High (${vulnCounts.high})` },
+                  { key: "medium", label: `Medium (${vulnCounts.medium})` },
+                  { key: "low", label: `Low (${vulnCounts.low})` },
+                ].map((f) => (
+                  <button
+                    key={f.key}
+                    className={`btn-tab ${vulnSeverityFilter === f.key ? "active" : ""}`}
+                    onClick={() => setVulnSeverityFilter(f.key)}
+                    style={{ fontSize: 12, padding: "6px 14px" }}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              {vulnErr && (
+                <div
+                  style={{
+                    padding: "10px 16px",
+                    borderRadius: 8,
+                    marginBottom: 16,
+                    background: "hsla(350,100%,65%,0.1)",
+                    border: "1px solid hsla(350,100%,65%,0.3)",
+                    color: "hsl(350,100%,65%)",
+                    fontSize: 13,
+                  }}
+                >
+                  {vulnErr}
+                </div>
+              )}
+
+              {vulnLoading && (
+                <div className="muted" style={{ padding: 20 }}>
+                  Loading vulnerability data...
+                </div>
+              )}
+
+              {!vulnLoading && !vulnErr && vulnData.length === 0 && (
+                <div className="muted" style={{ padding: 20 }}>
+                  No installed-software vulnerabilities found for this
+                  machine.
+                </div>
+              )}
+
+              {!vulnLoading && filteredVulns.length > 0 && (
+                <div className="tableWrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th style={{ width: 160 }}>CVE ID</th>
+                        <th>Package</th>
+                        <th style={{ width: 100 }}>Version</th>
+                        <th style={{ width: 90 }}>CVSS</th>
+                        <th style={{ width: 110 }}>Severity</th>
+                        <th>Condition</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredVulns.map((v, i) => (
+                        <tr key={`${v.cve}-${i}`}>
+                          <td
+                            className="mono"
+                            style={{ fontSize: 12, color: "var(--accent)" }}
+                          >
+                            {v.cve}
+                          </td>
+                          <td style={{ fontSize: 13, fontWeight: 500 }}>
+                            {v.package}
+                          </td>
+                          <td className="mono" style={{ fontSize: 12 }}>
+                            {v.version}
+                          </td>
+                          <td style={{ fontSize: 13, fontWeight: 700 }}>
+                            {v.cvssScore != null ? v.cvssScore.toFixed(1) : "—"}
+                          </td>
+                          <td>
+                            <span className={severityBadge(v.severity)}>
+                              {v.severity || "Unknown"}
+                            </span>
+                          </td>
+                          <td
+                            style={{ fontSize: 12, color: "var(--muted)" }}
+                          >
+                            {v.condition || "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           )}

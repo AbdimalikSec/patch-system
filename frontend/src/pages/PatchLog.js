@@ -46,11 +46,12 @@ export default function PatchLog() {
   }
 
   function exportCSV() {
-    const header = ["Hostname", "Package/KB", "Type", "Status", "Created At", "Completed At", "Output"];
+    const header = ["Hostname", "Package/KB", "Type", "Performed By", "Status", "Created At", "Completed At", "Output"];
     const rows = logs.map((l) => [
       l.hostname,
       l.kb,
       l.type || "patch",
+      l.triggeredBy || "",
       l.status,
       new Date(l.createdAt).toISOString(),
       l.completedAt ? new Date(l.completedAt).toISOString() : "",
@@ -170,7 +171,7 @@ export default function PatchLog() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--line)" }}>
-                {["Hostname", "Package/KB", "Type", "Status", "Created", "Completed", ""].map((h) => (
+                {["Hostname", "Package/KB", "Type", "Performed By", "Status", "Created", "Completed", ""].map((h) => (
                   <th
                     key={h}
                     style={{
@@ -209,6 +210,9 @@ export default function PatchLog() {
                       <td style={{ padding: "14px 24px", fontSize: 13, textTransform: "capitalize" }}>
                         {l.type || "patch"}
                       </td>
+                      <td style={{ padding: "14px 24px", fontSize: 13 }}>
+                        {l.triggeredBy || <span style={{ color: "var(--muted)" }}>—</span>}
+                      </td>
                       <td style={{ padding: "14px 24px" }}>
                         <span
                           style={{
@@ -237,7 +241,7 @@ export default function PatchLog() {
                     </tr>
                     {isOpen && (
                       <tr style={{ borderBottom: i < logs.length - 1 ? "1px solid var(--line)" : "none" }}>
-                        <td colSpan={7} style={{ padding: "0 24px 18px 24px" }}>
+                        <td colSpan={8} style={{ padding: "0 24px 18px 24px" }}>
                           <pre
                             style={{
                               background: "var(--surface)",

@@ -41,6 +41,7 @@ const client = axios.create({
 
 // ── Mongoose model (loaded after DB connect) ──────────────────────────────────
 let ComplianceCheck;
+let ComplianceHistory;
 
 // ── Auto-link DB machines to their Wazuh agent ID by hostname ─────────────────
 async function autoLinkAgents() {
@@ -172,28 +173,44 @@ function normalise(doc, hostname, agentId) {
 // ── Upsert one agent's checks into MongoDB ────────────────────────────────────
 async function upsertChecks(hostname, agentId, normalisedChecks) {
   let saved = 0;
-  for (const c of normalisedChecks) {
+    for (const c of normalisedChecks) {
     const existing = await ComplianceCheck.findOne(
       { assetHostname: c.assetHostname, checkId: c.checkId },
       { result: 1 },
     ).lean();
 
-// Only stamp statusChangedAt on a GENUINE transition of an existing check,
-    // not when a check is seen for the first time (baseline). This prevents
-    // first-time-seen failures (e.g. a newly added machine) from being flagged
-    // as "new failures since login".
     const isTransition = existing && existing.result !== c.result;
     const update = isTransition
       ? { ...c, statusChangedAt: new Date() }
       : existing
       ? c // existing, no change — leave statusChangedAt as-is
       : { ...c, statusChangedAt: new Date(0) }; // first-time baseline — old timestamp so it's not "new"
+
     await ComplianceCheck.findOneAndUpdate(
       { assetHostname: c.assetHostname, checkId: c.checkId },
       update,
       { upsert: true, new: true },
     );
     saved++;
+
+    // Record a permanent history entry on every GENUINE transition — this is
+    // independent of whether a ticket exists for this check, so compliance
+    // fixes/regressions are always tracked.
+    if (isTransition) {
+      try {
+        await ComplianceHistory.create({
+          assetHostname: c.assetHostname,
+          checkId: c.checkId,
+          title: c.title,
+          policy: c.policy,
+          fromResult: existing.result,
+          toResult: c.result,
+          changedAt: new Date(),
+        });
+      } catch (e) {
+        console.log(`[!] Failed to write compliance history for ${c.assetHostname}/${c.checkId}: ${e.message}`);
+      }
+    }
   }
   return saved;
 }
@@ -204,6 +221,7 @@ async function upsertChecks(hostname, agentId, normalisedChecks) {
     console.log("[*] Connecting to MongoDB:", MONGO_URI); 
    await mongoose.connect(MONGO_URI);
     ComplianceCheck = require("./models/ComplianceCheck");
+    ComplianceHistory = require("./models/ComplianceHistory");
      console.log("[+] MongoDB connected.");
 
     // Auto-link any newly-enrolled machines to their Wazuh agent ID

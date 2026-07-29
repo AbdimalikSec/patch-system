@@ -5,6 +5,11 @@ const Compliance  = require("../models/Compliance");
 const AssetMeta   = require("../models/AssetMeta");
 const CVEMatch    = require("../models/CVEMatch");
 const ComplianceCheck = require("../models/ComplianceCheck");
+const { requireAuth, requireRole } = require("../middleware/authMiddleware");
+const { computeRisk } = require("./risk");
+const Agent = require("../models/Agent");
+const { getVulnMatchesForAgent } = require("./vulnerabilities");
+
 
 function hostnameRegex(h) {
   return { $regex: new RegExp(`^${h}$`, "i") };
@@ -18,8 +23,8 @@ async function computeGroupStats(members) {
 
   for (const hostname of members) {
     const re = hostnameRegex(hostname);
-
-    const [patch, checks, meta, cves] = await Promise.all([
+     
+     const [patch, checks, meta, cves, agent] = await Promise.all([
       Patch.findOne({ assetHostname: re }).sort({ collectedAt: -1 }),
       ComplianceCheck.aggregate([
         { $match: { assetHostname: { $regex: new RegExp(`^${hostname}$`, "i") } } },
@@ -27,7 +32,9 @@ async function computeGroupStats(members) {
       ]),
       AssetMeta.findOne({ hostname: re }),
       CVEMatch.find({ assetHostname: re }),
+      Agent.findOne({ hostname: re }).lean(),
     ]);
+    const vulnMatches = agent?.wazuhId ? await getVulnMatchesForAgent(agent.wazuhId) : [];
 
     totalMissing += patch?.missingCount || 0;
 
@@ -39,19 +46,17 @@ async function computeGroupStats(members) {
     totalFailed += failed;
     totalChecks += total;
 
-    // Simple risk score estimate for group
-    const criticality = meta?.criticality || 0.5;
-    const maxCVSS     = cves.length ? Math.max(...cves.map(c => c.cvssScore || 0)) : 0;
-    const cvssVal     = maxCVSS > 0 ? maxCVSS : (patch?.missingCount || 0) / 50 * 10;
-    const compFactor  = total > 0 ? failed / 300 : 0;
-    const score       = Math.min(100, Math.round(
-      (0.55 * Math.min(cvssVal / 10, 1) + 0.45 * Math.min(compFactor, 1)) *
-      (0.5 + criticality * 0.5) * 100
-    ));
-
-    if (score > maxScore) {
-      maxScore = score;
-      maxPriority = score >= 75 ? "Critical" : score >= 50 ? "High" : score >= 25 ? "Medium" : "Low";
+// Use the SAME risk engine as everywhere else, instead of a local copy
+    const risk = await computeRisk({
+      patch,
+      compliance: { failedCount: failed },
+      meta,
+      cveMatches: cves,
+      vulnMatches,
+    });
+    if (risk.score > maxScore) {
+      maxScore = risk.score;
+      maxPriority = risk.priority;
     }
   }
 
@@ -71,7 +76,7 @@ async function computeGroupStats(members) {
 }
 
 // GET /api/groups — list all groups with aggregated stats
-router.get("/", async (req, res) => {
+router.get("/", requireAuth, requireRole("admin", "compliance-officer", "analyst"), async (req, res) => {
   try {
     const groups = await AssetGroup.find({}).lean();
     const results = [];
@@ -88,7 +93,7 @@ router.get("/", async (req, res) => {
 });
 
 // POST /api/groups — create a new group
-router.post("/", async (req, res) => {
+router.post("/", requireAuth, requireRole("admin", "compliance-officer"), async (req, res) => {
   try {
     const { name, description, color, icon, members, owner } = req.body;
     if (!name) return res.status(400).json({ ok: false, error: "name required" });
@@ -101,7 +106,7 @@ router.post("/", async (req, res) => {
 });
 
 // PATCH /api/groups/:id — update group
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", requireAuth, requireRole("admin", "compliance-officer"), async (req, res) => {
   try {
     const { name, description, color, icon, members, owner } = req.body;
     const group = await AssetGroup.findByIdAndUpdate(
@@ -117,7 +122,7 @@ router.patch("/:id", async (req, res) => {
 });
 
 // DELETE /api/groups/:id
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireAuth, requireRole("admin", "compliance-officer"), async (req, res) => {
   try {
     await AssetGroup.findByIdAndDelete(req.params.id);
     res.json({ ok: true });
@@ -127,7 +132,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 // POST /api/groups/:id/members — add member to group
-router.post("/:id/members", async (req, res) => {
+router.post("/:id/members", requireAuth, requireRole("admin", "compliance-officer"), async (req, res) => {
   try {
     const { hostname } = req.body;
     const group = await AssetGroup.findByIdAndUpdate(
@@ -142,7 +147,7 @@ router.post("/:id/members", async (req, res) => {
 });
 
 // DELETE /api/groups/:id/members/:hostname — remove member
-router.delete("/:id/members/:hostname", async (req, res) => {
+router.delete("/:id/members/:hostname", requireAuth, requireRole("admin", "compliance-officer"), async (req, res) => {
   try {
     const group = await AssetGroup.findByIdAndUpdate(
       req.params.id,

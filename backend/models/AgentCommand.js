@@ -5,6 +5,7 @@ const AgentCommandSchema = new mongoose.Schema({
   kb:          { type: String, required: true },
   type:        { type: String, default: "patch", enum: ["patch", "restart"] },
   status:      { type: String, default: "pending", enum: ["pending", "running", "success", "failed"] },
+  triggeredBy:   { type: String, default: "" },   // username of who clicked Patch Now / Restart
   output:      { type: String, default: "" },
   createdAt:   { type: Date, default: Date.now },
   completedAt: { type: Date },

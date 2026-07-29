@@ -1,9 +1,10 @@
 const router = require("express").Router();
 const ComplianceCheck = require("../models/ComplianceCheck");
+const { requireAuth } = require("../middleware/authMiddleware");
 
 // GET /api/notifications/new-failures?since=<ISO timestamp>
 // Returns compliance checks that newly failed since the given timestamp
-router.get("/new-failures", async (req, res) => {
+router.get("/new-failures", requireAuth, async (req, res) => {
   try {
     const since = req.query.since ? new Date(req.query.since) : null;
 

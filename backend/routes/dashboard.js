@@ -4,6 +4,7 @@ const Patch = require("../models/Patch");
 const Compliance = require("../models/Compliance");
 const ComplianceCheck = require("../models/ComplianceCheck");
 const AgentCommand = require("../models/AgentCommand");
+const { requireAuth } = require("../middleware/authMiddleware");
 
 function escapeRegex(str = "") {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -17,7 +18,7 @@ async function findLatestCaseInsensitive(Model, field, hostname) {
 }
 
 // GET /api/dashboard/patches/backlog
-router.get("/patches/backlog", async (req, res) => {
+router.get("/patches/backlog", requireAuth, async (req, res) => {
   try {
     const assets = await Asset.find({}).lean();
     const out = [];
@@ -92,7 +93,7 @@ router.get("/patches/backlog", async (req, res) => {
 });
 
 // GET /api/dashboard/compliance/failed
-router.get("/compliance/failed", async (req, res) => {
+router.get("/compliance/failed", requireAuth, async (req, res) => {
   try {
     const assets = await Asset.find({}).lean();
     const out = [];
@@ -137,7 +138,7 @@ router.get("/compliance/failed", async (req, res) => {
 
 // GET /api/dashboard/compliance/summary
 // Counts directly from compliancechecks so scores update after every collector run
-router.get("/compliance/summary", async (req, res) => {
+router.get("/compliance/summary", requireAuth, async (req, res) => {
   try {
     const assets = await Asset.find({}).lean();
     const out = [];

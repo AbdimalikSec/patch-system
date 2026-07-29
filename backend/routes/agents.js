@@ -1,7 +1,7 @@
 const router = require("express").Router();
 const axios  = require("axios");
 const https  = require("https");
-
+const { requireAuth } = require("../middleware/authMiddleware");
 const WAZUH = process.env.WAZUH_API_URL;
 const USER  = process.env.WAZUH_API_USER;
 const PASS  = process.env.WAZUH_API_PASS;
@@ -22,7 +22,7 @@ async function getWazuhToken() {
 }
 
 // GET /api/agents/status/:hostname — live status from Wazuh
-router.get("/status/:hostname", async (req, res) => {
+router.get("/status/:hostname", requireAuth, async (req, res) => {
   try {
     const token = await getWazuhToken();
     const resp  = await wazuh.get(
@@ -59,7 +59,7 @@ router.get("/status/:hostname", async (req, res) => {
 });
 
 // GET /api/agents — all agents with live status
-router.get("/", async (req, res) => {
+router.get("/", requireAuth, async (req, res) => {
   try {
     const token = await getWazuhToken();
     const resp  = await wazuh.get("/agents?limit=500", {

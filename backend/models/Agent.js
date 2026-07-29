@@ -11,7 +11,7 @@ const AgentSchema = new mongoose.Schema(
     // Deploy credentials — how Patch Now reaches this machine
     // For windows: agent-based (no creds needed) OR winrm (username/password)
     // For linux: ssh (username + key path)
-    deployMethod: { type: String, enum: ["agent", "winrm", "ssh"], default: "agent" },
+    deployMethod: { type: String, enum: ["agent", "ssh"], default: "agent" },
     username:     { type: String, default: "" },
     password:     { type: String, default: "" },
     sshKeyPath:   { type: String, default: "" },

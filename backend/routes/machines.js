@@ -42,6 +42,8 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
     } = req.body;
 
     if (!hostname) return res.status(400).json({ ok: false, error: "hostname required" });
+    if (deployMethod && !["agent", "ssh"].includes(deployMethod))
+      return res.status(400).json({ ok: false, error: "deployMethod must be agent or ssh" });
     if (!os || !["windows", "linux"].includes(os))
       return res.status(400).json({ ok: false, error: "os must be windows or linux" });
 

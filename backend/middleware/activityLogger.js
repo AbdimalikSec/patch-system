@@ -12,8 +12,25 @@ function sanitizeBody(body) {
   return clone;
 }
 
+// Machine-to-machine routes — agents and collectors calling these use a
+// shared secret or no auth at all, never a real dashboard login. These are
+// never real user activity and must not be logged as "anonymous".
+function isMachineRoute(url) {
+  if (url.startsWith("/api/ingest/")) return true;
+  if (url.startsWith("/api/agent/report")) return true;
+  // Agent polling for its own commands: GET /api/agent/commands/:hostname
+  // (not the admin/patch-operator-facing POST /api/agent/commands, which
+  // creates a command and is a real, loggable user action)
+  if (/^\/api\/agent\/commands\/[^/]+$/.test(url)) return true;
+  return false;
+}
+
 function activityLogger(req, res, next) {
   const isLoginRoute = req.originalUrl.startsWith("/api/auth/login");
+
+  if (isMachineRoute(req.originalUrl)) {
+    return next();
+  }
 
   // Only log mutating requests, plus the login route specifically (which is
   // POST anyway, so it's covered by MUTATING_METHODS — kept explicit for clarity).
