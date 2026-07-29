@@ -81,6 +81,8 @@ function Modal({ open, onClose, children }) {
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function AssetDetails() {
   const { hostname } = useParams();
+  const { user } = useAuth();
+  const canCreateTicket = user?.role === "admin" || user?.role === "compliance-officer";
 
   const [riskRes, setRiskRes] = useState(null);
   const [patchRes, setPatchRes] = useState(null);
@@ -792,7 +794,7 @@ export default function AssetDetails() {
                                   >
                                     View
                                   </button>
-                                  {c.result === "failed" && !ticket && (
+                                  {c.result === "failed" && !ticket && canCreateTicket && (
                                     <button
                                       onClick={async () => {
                                         try {

@@ -32,6 +32,68 @@ function SeverityBadge({ severity }) {
   );
 }
 
+async function exportVulnerabilityReport(summary, setExporting) {
+  setExporting(true);
+  try {
+    const results = await Promise.all(
+      summary.map(async (s) => {
+        try {
+          const res = await axios.get(`${API}/api/vulnerabilities/${encodeURIComponent(s.hostname)}`);
+          return { hostname: s.hostname, os: s.os, cves: res.data?.data || [] };
+        } catch {
+          return { hostname: s.hostname, os: s.os, cves: [] };
+        }
+      }),
+    );
+
+    const header = ["Hostname", "OS", "CVE", "Package", "Version", "Severity", "CVSS", "Condition", "Published"];
+    const lines = [
+      [`Vulnerability Report — All Monitored Assets`],
+      [`Generated: ${new Date().toLocaleString()}`],
+      [],
+      header,
+    ];
+
+    let totalCves = 0;
+    for (const r of results) {
+      if (r.cves.length === 0) {
+        lines.push([r.hostname, r.os, "No known CVEs", "", "", "", "", "", ""]);
+        continue;
+      }
+      for (const c of r.cves) {
+        totalCves++;
+        lines.push([
+          r.hostname,
+          r.os,
+          c.cve,
+          c.package || "",
+          c.version || "",
+          c.severity || "Unknown",
+          c.cvssScore != null ? c.cvssScore.toFixed(1) : "",
+          c.condition || "",
+          c.published ? new Date(c.published).toLocaleDateString() : "",
+        ]);
+      }
+    }
+
+    lines.splice(2, 0, [`Total CVEs across fleet: ${totalCves}`]);
+
+    const csv = lines
+      .map((row) => row.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `vulnerability-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } finally {
+    setExporting(false);
+  }
+}
+
+
 function CVEDetailTable({ hostname }) {
   const [cves, setCves] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -136,6 +198,7 @@ export default function Vulnerabilities() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [expanded, setExpanded] = useState(null);
+  const [exporting, setExporting] = useState(false);
 
   async function load() {
     try {
@@ -168,10 +231,20 @@ export default function Vulnerabilities() {
   return (
     <Layout
       title="Vulnerabilities"
-      rightControls={
-        <button className="btn" onClick={load} style={{ fontSize: 12, padding: "6px 14px" }}>
-          Refresh
-        </button>
+        rightControls={
+        <>
+          <button className="btn" onClick={load} style={{ fontSize: 12, padding: "6px 14px" }}>
+            Refresh
+          </button>
+          <button
+            className="btn"
+            onClick={() => exportVulnerabilityReport(summary, setExporting)}
+            disabled={exporting || summary.length === 0}
+            style={{ fontSize: 12, padding: "6px 14px" }}
+          >
+            {exporting ? "Exporting..." : "Export Report (CSV)"}
+          </button>
+        </>
       }
     >
       {err && (

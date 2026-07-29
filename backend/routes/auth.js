@@ -1,6 +1,8 @@
 const router = require("express").Router();
 const jwt    = require("jsonwebtoken");
 const User   = require("../models/User");
+const UserActivity = require("../models/UserActivity");
+const { createNotification } = require("../utils/notify");
 const { requireAuth, requireAdmin } = require("../middleware/authMiddleware");
 
 const JWT_SECRET  = process.env.JWT_SECRET  || "riskpatch-secret-change-in-prod";
@@ -24,6 +26,83 @@ function validatePassword(val) {
   return "";
 }
 
+const BRUTEFORCE_WINDOW_MIN = 10;
+const BRUTEFORCE_THRESHOLD = 5;
+const BRUTEFORCE_COOLDOWN_MIN = 30;
+
+// Fires an admin alert if a username has crossed the recent-failure threshold,
+// throttled so a sustained attack doesn't spam one notification per attempt.
+async function checkBruteForce(attemptedUsername) {
+  try {
+    const windowStart = new Date(Date.now() - BRUTEFORCE_WINDOW_MIN * 60 * 1000);
+    const recentFailures = await UserActivity.countDocuments({
+      username: attemptedUsername,
+      action: "login_failed",
+      createdAt: { $gte: windowStart },
+    });
+    const totalIncludingThisAttempt = recentFailures + 1;
+    if (totalIncludingThisAttempt < BRUTEFORCE_THRESHOLD) return;
+
+    const cooldownStart = new Date(Date.now() - BRUTEFORCE_COOLDOWN_MIN * 60 * 1000);
+    const Notification = require("../models/Notification");
+    const alreadyNotified = await Notification.findOne({
+      type: "login_bruteforce",
+      message: { $regex: attemptedUsername },
+      createdAt: { $gte: cooldownStart },
+    });
+    if (alreadyNotified) return;
+
+    createNotification({
+      type: "login_bruteforce",
+      severity: "critical",
+      title: "Possible brute-force login attempt",
+      message: `${totalIncludingThisAttempt} failed login attempts for username "${attemptedUsername}" in the last ${BRUTEFORCE_WINDOW_MIN} minutes`,
+      targetRoles: ["admin"],
+    });
+  } catch (e) {
+    console.error("[checkBruteForce]", e.message);
+  }
+}
+
+// Flags a successful login from an IP this user has never logged in from
+// before. Skips entirely on a user's very first-ever login, since there's
+// no baseline yet to call anything "unfamiliar."
+async function checkUnfamiliarLocation(username, ip, role) {
+  try {
+    if (!ip) return;
+
+    const priorLogins = await UserActivity.countDocuments({
+      username,
+      action: "login_success",
+    });
+    if (priorLogins === 0) return; // first login ever — nothing to compare against
+
+    const seenThisIP = await UserActivity.findOne({
+      username,
+      action: "login_success",
+      ip,
+    });
+    if (seenThisIP) return; // already logged in from this IP before
+
+    createNotification({
+      type: "login_unfamiliar_location",
+      severity: "warning",
+      title: "Login from a new location",
+      message: `${username} logged in from a new IP address (${ip}) not seen before for this account`,
+      targetUsername: username,
+    });
+    createNotification({
+      type: "login_unfamiliar_location",
+      severity: "warning",
+      title: `New login location for ${username}`,
+      message: `${username} (${role}) logged in from a new IP address (${ip})`,
+      targetRoles: ["admin"],
+    });
+  } catch (e) {
+    console.error("[checkUnfamiliarLocation]", e.message);
+  }
+}
+
 // POST /api/auth/login
 router.post("/login", async (req, res) => {
   try {
@@ -34,11 +113,13 @@ router.post("/login", async (req, res) => {
 
     const user = await User.findOne({ username: username.toLowerCase().trim() });
     if (!user) {
+      checkBruteForce(username.toLowerCase().trim());
       return res.status(401).json({ ok: false, error: "Invalid credentials" });
     }
 
     const valid = await user.comparePassword(password);
     if (!valid) {
+      checkBruteForce(username.toLowerCase().trim());
       return res.status(401).json({ ok: false, error: "Invalid credentials" });
     }
 
@@ -47,6 +128,9 @@ router.post("/login", async (req, res) => {
       JWT_SECRET,
       { expiresIn: JWT_EXPIRES }
     );
+
+    const loginIp = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "";
+    checkUnfamiliarLocation(user.username, loginIp, user.role);
 
     res.json({
       ok: true,

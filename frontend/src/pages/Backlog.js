@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import Layout from "../Layout";
+import { useAuth } from "../context/AuthContext";
 
 const API = process.env.REACT_APP_API_BASE || "http://localhost:5000";
 
@@ -49,7 +50,7 @@ function rankPriority(p) {
   return { Critical: 4, High: 3, Medium: 2, Low: 1 }[p] || 0;
 }
 
-function AptUpdateButton({ hostname }) {
+function AptUpdateButton({ hostname, canPatch }) {
   const [state, setState] = useState("idle");
   const [output, setOutput] = useState("");
 
@@ -95,6 +96,8 @@ function AptUpdateButton({ hostname }) {
       </div>
     );
 
+if (!canPatch) return null;
+
   return (
     <button
       className="btn"
@@ -114,6 +117,7 @@ function PatchNowButton({
   onPatched,
   alreadyQueued,
   activeCommand,
+  canPatch,
 }) {
   const [state, setState] = useState(() => {
     if (activeCommand?.status === "pending") return "queued";
@@ -279,7 +283,7 @@ function PatchNowButton({
             {output.slice(0, 100)}
           </div>
         )}
-        {isWindows && hostname.toLowerCase() !== "dc1" && (
+        {isWindows && canPatch && hostname.toLowerCase() !== "dc1" && (
           <button
             className="btn"
             style={{
@@ -357,6 +361,8 @@ function PatchNowButton({
       </div>
     );
 
+if (!canPatch) return null;
+
   return (
     <button
       className="btn"
@@ -377,6 +383,8 @@ function PatchNowButton({
 }
 
 export default function Backlog() {
+  const { user } = useAuth();
+  const canPatch = user?.role === "admin" || user?.role === "patch-operator";
   const [rows, setRows] = useState([]);
   const [overviewRows, setOverviewRows] = useState([]);
   const [err, setErr] = useState("");
@@ -780,7 +788,7 @@ export default function Backlog() {
                             <div className="muted" style={{ fontSize: 13 }}>
                               Missing items ({g.missingCount})
                             </div>
-                            {isLin && <AptUpdateButton hostname={g.hostname} />}
+                            {isLin && <AptUpdateButton hostname={g.hostname} canPatch={canPatch} />}
                             {isLin && g.missingCount > 0 && (
                               <div
                                 style={{ fontSize: 11, color: "var(--muted)" }}
@@ -856,6 +864,7 @@ export default function Backlog() {
                                         item.split("/")[0].trim()
                                       ]
                                     }
+                                    canPatch={canPatch}
                                   />
                                 </div>
                               ))}

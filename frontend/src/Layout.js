@@ -308,31 +308,32 @@ const ROLE_COLOR = {
 };
 
 // ── Notification Bell Component ───────────────────────────────────────────────
-function NotificationBell({ loginAt }) {
+// ── Notification Bell Component ───────────────────────────────────────────────
+function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [notifications, setNoti] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef(null);
   const navigate = useNavigate();
-  const [clearedAt, setClearedAt] = useState(
-    () => localStorage.getItem("notifClearedAt") || null,
-  );
 
-  useEffect(() => {
-    if (!loginAt) return;
-    const since =
-      clearedAt && new Date(clearedAt) > new Date(loginAt)
-        ? clearedAt
-        : loginAt;
+  function load() {
     setLoading(true);
     axios
-      .get(
-        `${API}/api/notifications/new-failures?since=${encodeURIComponent(since)}`,
-      )
-      .then((res) => setNoti(res.data?.data || []))
+      .get(`${API}/api/notifications`, { params: { limit: 30 } })
+      .then((res) => {
+        setNoti(res.data?.data || []);
+        setUnreadCount(res.data?.unreadCount || 0);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [loginAt, clearedAt]);
+  }
+
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, 60000); // refresh every 60s
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     function handleClick(e) {
@@ -344,18 +345,34 @@ function NotificationBell({ loginAt }) {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const count = notifications.length;
-
-  function handleNotificationClick(hostname) {
-    setOpen(false);
-    navigate(`/asset/${encodeURIComponent(hostname)}`);
+  function severityColor(sev) {
+    if (sev === "critical") return "hsl(350,100%,65%)";
+    if (sev === "warning") return "hsl(45,100%,50%)";
+    return "hsl(210,100%,60%)";
   }
 
-  function handleClear() {
-    const now = new Date().toISOString();
-    localStorage.setItem("notifClearedAt", now);
-    setClearedAt(now);
-    setNoti([]);
+  async function handleItemClick(n) {
+    if (!n.isRead) {
+      try {
+        await axios.post(`${API}/api/notifications/${n._id}/read`);
+        setNoti((prev) => prev.map((x) => (x._id === n._id ? { ...x, isRead: true } : x)));
+        setUnreadCount((c) => Math.max(0, c - 1));
+      } catch {}
+    }
+    setOpen(false);
+    if (n.relatedHostname) {
+      navigate(`/asset/${encodeURIComponent(n.relatedHostname)}`);
+    } else if (n.relatedTicketId) {
+      navigate("/tickets");
+    }
+  }
+
+  async function handleReadAll() {
+    try {
+      await axios.post(`${API}/api/notifications/read-all`);
+      setNoti((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      setUnreadCount(0);
+    } catch {}
   }
 
   return (
@@ -376,11 +393,7 @@ function NotificationBell({ loginAt }) {
           color: "var(--text)",
           transition: "all 0.15s",
         }}
-        title={
-          count > 0
-            ? `${count} new compliance failure${count > 1 ? "s" : ""} since login`
-            : "No new failures since login"
-        }
+        title={unreadCount > 0 ? `${unreadCount} unread notification${unreadCount > 1 ? "s" : ""}` : "No unread notifications"}
       >
         <svg
           width="16"
@@ -395,7 +408,7 @@ function NotificationBell({ loginAt }) {
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
           <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
         </svg>
-        {count > 0 && (
+        {unreadCount > 0 && (
           <div
             style={{
               position: "absolute",
@@ -414,7 +427,7 @@ function NotificationBell({ loginAt }) {
               border: "2px solid var(--bg)",
             }}
           >
-            {count > 9 ? "9+" : count}
+            {unreadCount > 9 ? "9+" : unreadCount}
           </div>
         )}
       </button>
@@ -425,7 +438,7 @@ function NotificationBell({ loginAt }) {
             position: "absolute",
             top: 44,
             right: 0,
-            width: 360,
+            width: 380,
             maxHeight: 480,
             background: "#1a1d27",
             border: "1px solid var(--line)",
@@ -446,11 +459,9 @@ function NotificationBell({ loginAt }) {
               alignItems: "center",
             }}
           >
-            <div style={{ fontWeight: 800, fontSize: 13 }}>
-              New Failures Since Login
-            </div>
+            <div style={{ fontWeight: 800, fontSize: 13 }}>Notifications</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              {count > 0 && (
+              {unreadCount > 0 && (
                 <div
                   style={{
                     fontSize: 10,
@@ -462,12 +473,12 @@ function NotificationBell({ loginAt }) {
                     border: "1px solid hsla(350,100%,65%,0.3)",
                   }}
                 >
-                  {count} new
+                  {unreadCount} new
                 </div>
               )}
-              {count > 0 && (
+              {notifications.length > 0 && (
                 <button
-                  onClick={handleClear}
+                  onClick={handleReadAll}
                   style={{
                     fontSize: 11,
                     fontWeight: 600,
@@ -479,138 +490,66 @@ function NotificationBell({ loginAt }) {
                     cursor: "pointer",
                   }}
                 >
-                  Clear
+                  Mark all read
                 </button>
               )}
             </div>
           </div>
 
-          <div style={{ overflowY: "auto", maxHeight: 400 }}>
+          <div style={{ overflowY: "auto", maxHeight: 420 }}>
             {loading && (
-              <div
-                style={{
-                  padding: 20,
-                  textAlign: "center",
-                  color: "var(--muted)",
-                  fontSize: 13,
-                }}
-              >
-                Checking for new failures...
+              <div style={{ padding: 20, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+                Loading...
               </div>
             )}
-            {!loading && count === 0 && (
+            {!loading && notifications.length === 0 && (
               <div style={{ padding: 24, textAlign: "center" }}>
                 <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
-                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>
-                  All clear
-                </div>
-                <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                  No new compliance failures since you logged in.
-                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>All clear</div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>No notifications right now.</div>
               </div>
             )}
             {!loading &&
-              count > 0 &&
               notifications.map((n, i) => (
                 <div
-                  key={i}
-                  onClick={() => handleNotificationClick(n.assetHostname)}
+                  key={n._id}
+                  onClick={() => handleItemClick(n)}
                   style={{
                     padding: "12px 18px",
-                    borderBottom:
-                      i < notifications.length - 1
-                        ? "1px solid var(--line)"
-                        : "none",
+                    borderBottom: i < notifications.length - 1 ? "1px solid var(--line)" : "none",
                     cursor: "pointer",
+                    background: n.isRead ? "transparent" : "hsla(210,100%,60%,0.04)",
                     transition: "background 0.1s",
                   }}
-                  onMouseEnter={(e) =>
-                    (e.currentTarget.style.background = "var(--surface)")
-                  }
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface)")}
                   onMouseLeave={(e) =>
-                    (e.currentTarget.style.background = "transparent")
+                    (e.currentTarget.style.background = n.isRead ? "transparent" : "hsla(210,100%,60%,0.04)")
                   }
                 >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
-                      gap: 8,
-                    }}
-                  >
-                    <div style={{ flex: 1 }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                          marginBottom: 4,
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            padding: "1px 6px",
-                            borderRadius: 3,
-                            background: "hsla(350,100%,65%,0.15)",
-                            color: "hsl(350,100%,65%)",
-                            border: "1px solid hsla(350,100%,65%,0.3)",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          {n.assetHostname}
-                        </span>
-                        <span style={{ fontSize: 10, color: "var(--muted)" }}>
-                          Check {n.checkId}
-                        </span>
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 600,
-                          lineHeight: 1.4,
-                          color: "var(--text)",
-                        }}
-                      >
-                        {n.title}
-                      </div>
-                    </div>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                     <div
                       style={{
-                        fontSize: 10,
-                        color: "var(--muted)",
-                        whiteSpace: "nowrap",
-                        marginTop: 2,
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        background: severityColor(n.severity),
+                        marginTop: 5,
+                        flexShrink: 0,
+                        opacity: n.isRead ? 0.3 : 1,
                       }}
-                    >
-                      {new Date(n.updatedAt).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: n.isRead ? 500 : 700, marginBottom: 2 }}>
+                        {n.title}
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.4 }}>{n.message}</div>
+                      <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4 }}>
+                        {new Date(n.createdAt).toLocaleString()}
+                      </div>
                     </div>
                   </div>
                 </div>
               ))}
-          </div>
-
-          <div
-            style={{
-              padding: "10px 18px",
-              borderTop: "1px solid var(--line)",
-              fontSize: 11,
-              color: "var(--muted)",
-              textAlign: "center",
-            }}
-          >
-            Since{" "}
-            {loginAt
-              ? new Date(loginAt).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
-              : "login"}
           </div>
         </div>
       )}
@@ -680,6 +619,7 @@ export default function Layout({ title, rightControls, children }) {
  const rc = ROLE_COLOR[role] || ROLE_COLOR.analyst;
 
   function handleLogout() {
+    localStorage.removeItem("navExpandedGroups");
     logout();
     navigate("/login");
   }
@@ -836,7 +776,7 @@ export default function Layout({ title, rightControls, children }) {
           >
             {rightControls}
             <ThemeToggle />
-            <NotificationBell loginAt={loginAt} />
+            <NotificationBell />
           </div>
         </div>
         <div className="content">{children}</div>

@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const Asset           = require("../models/Asset");
 const Patch           = require("../models/Patch");
+const Compliance      = require("../models/Compliance");
 const AssetMeta       = require("../models/AssetMeta");
 const CVEMatch        = require("../models/CVEMatch");
 const ComplianceCheck = require("../models/ComplianceCheck");
@@ -14,7 +15,7 @@ router.get("/overview", requireAuth, async (req, res) => {
     const assets = await Asset.find({}).sort({ lastSeen: -1 });
     const rows = await Promise.all(assets.map(async (a) => {
       const rx = new RegExp("^" + a.hostname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i");
-       const [patch, meta, cveMatches, failedCount, totalCount, latestCheck, agent] = await Promise.all([
+        const [patch, meta, cveMatches, failedCount, totalCount, latestCheck, agent] = await Promise.all([
         Patch.findOne({ assetHostname: { $regex: rx } }).sort({ collectedAt: -1 }),
         AssetMeta.findOne({ hostname: { $regex: rx } }),
         CVEMatch.find({ assetHostname: { $regex: rx } }),
@@ -23,12 +24,13 @@ router.get("/overview", requireAuth, async (req, res) => {
         ComplianceCheck.findOne({ assetHostname: { $regex: rx } }).sort({ collectedAt: -1 }),
         Agent.findOne({ hostname: { $regex: rx } }).lean(),
       ]);
-      const vulnMatches = agent?.wazuhId ? await getVulnMatchesForAgent(agent.wazuhId) : [];
+        const vulnMatches = agent?.wazuhId ? await getVulnMatchesForAgent(agent.wazuhId) : [];
       const score       = totalCount > 0 ? Math.round(((totalCount - failedCount) / totalCount) * 100) : null;
       const collectedAt = latestCheck?.collectedAt || null;
       const risk        = await computeRisk({ patch, compliance: { failedCount }, meta, cveMatches, vulnMatches });
+      const detailedOs  = compliance?.raw?.agent?.os?.name || a.os;
       return {
-        hostname: a.hostname, os: a.os, ip: a.ip, source: a.source, lastSeen: a.lastSeen,
+        hostname: a.hostname, os: detailedOs, ip: a.ip, source: a.source, lastSeen: a.lastSeen,
         patch: patch ? { collectedAt: patch.collectedAt, missingCount: patch.missingCount } : null,
         compliance: { collectedAt, failedCount, score },
         meta: meta ? { role: meta.role, criticality: meta.criticality } : null,

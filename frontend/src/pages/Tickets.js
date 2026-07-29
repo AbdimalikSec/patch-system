@@ -366,13 +366,15 @@ function TicketRow({ ticket, currentUser, users, selected, onToggleSelect, canBu
         </td>
         <td><Badge color={pc}>{ticket.priority}</Badge></td>
         <td><Badge color={sc}>{statusLabel(ticket.status)}</Badge></td>
-        <td style={{ fontSize: 12 }}>
-          {isUnassigned ? (
+         <td style={{ fontSize: 12 }}>
+          {isUnassigned && canBulkAssign ? (
             <button onClick={handleSelfAssign} style={{
               padding: "3px 10px", borderRadius: 5, fontSize: 11, cursor: "pointer",
               background: "hsla(45,100%,50%,0.12)", border: "1px solid hsla(45,100%,50%,0.4)",
               color: "hsl(45,100%,50%)", fontWeight: 700,
             }}>Assign to me</button>
+          ) : isUnassigned ? (
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>Unassigned</span>
           ) : (
             <span style={{ color: isMyTicket ? "var(--accent)" : "var(--text)", fontWeight: isMyTicket ? 700 : 400 }}>
               {ticket.assignedTo} {isMyTicket && <span style={{ fontSize: 10, color: "var(--muted)" }}>(you)</span>}

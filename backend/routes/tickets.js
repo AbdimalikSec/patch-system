@@ -1,7 +1,7 @@
 const router = require("express").Router();
 const Ticket = require("../models/Ticket");
 const { requireRole } = require("../middleware/authMiddleware");
-
+const { createNotification } = require("../utils/notify");
 // GET /api/tickets/:hostname — all tickets for an asset
 // Read access: everyone who can see Tickets per the matrix (not patch-operator)
 // GET /api/tickets/reports/resolution-velocity — resolved tickets over time,
@@ -153,10 +153,24 @@ router.patch("/bulk-assign", requireRole("admin", "compliance-officer"), async (
         error: "ticketIds (array) and assignedTo are required",
       });
     }
+    const affected = await Ticket.find({ _id: { $in: ticketIds } }).lean();
     const result = await Ticket.updateMany(
       { _id: { $in: ticketIds } },
       { $set: { assignedTo, status: "in-progress" } }
     );
+
+    if (affected.length > 0) {
+      createNotification({
+        type: "ticket_assigned",
+        severity: "info",
+        title: `${affected.length} ticket${affected.length > 1 ? "s" : ""} assigned to you`,
+        message: affected.length === 1
+          ? `${affected[0].assetHostname} — ${affected[0].title}`
+          : `Across ${new Set(affected.map((t) => t.assetHostname)).size} machine(s)`,
+        targetUsername: assignedTo,
+      });
+    }
+
     res.json({ ok: true, modified: result.modifiedCount });
   } catch (e) {
     res.status(500).json({ ok: false, error: "server_error" });
@@ -168,6 +182,9 @@ router.patch("/bulk-assign", requireRole("admin", "compliance-officer"), async (
 router.patch("/:id", requireRole("admin", "compliance-officer"), async (req, res) => {
   try {
     const { status, assignedTo, notes, priority } = req.body;
+    const before = await Ticket.findById(req.params.id).lean();
+    if (!before) return res.status(404).json({ ok: false, error: "Ticket not found" });
+
     const update = {};
     if (status)     update.status     = status;
     if (assignedTo !== undefined) update.assignedTo = assignedTo;
@@ -177,13 +194,52 @@ router.patch("/:id", requireRole("admin", "compliance-officer"), async (req, res
     if (status === "open" || status === "in-progress") update.resolvedAt = null;
 
     const ticket = await Ticket.findByIdAndUpdate(req.params.id, update, { new: true });
-    if (!ticket) return res.status(404).json({ ok: false, error: "Ticket not found" });
+
+    // Notify on assignment change (new assignee gets it; a departing assignee
+    // is told it moved away from them)
+    if (assignedTo !== undefined && assignedTo !== before.assignedTo) {
+      if (assignedTo) {
+        createNotification({
+          type: "ticket_assigned",
+          severity: "info",
+          title: "Ticket assigned to you",
+          message: `${ticket.assetHostname} — ${ticket.title}`,
+          targetUsername: assignedTo,
+          relatedHostname: ticket.assetHostname,
+          relatedTicketId: ticket._id,
+        });
+      }
+      if (before.assignedTo && before.assignedTo !== assignedTo) {
+        createNotification({
+          type: "ticket_reassigned",
+          severity: "info",
+          title: "Ticket reassigned away from you",
+          message: `${ticket.assetHostname} — ${ticket.title}`,
+          targetUsername: before.assignedTo,
+          relatedHostname: ticket.assetHostname,
+          relatedTicketId: ticket._id,
+        });
+      }
+    }
+
+    // Notify the assignee when their ticket is resolved
+    if (status === "resolved" && before.status !== "resolved" && ticket.assignedTo) {
+      createNotification({
+        type: "ticket_resolved",
+        severity: "info",
+        title: "Ticket resolved",
+        message: `${ticket.assetHostname} — ${ticket.title}`,
+        targetUsername: ticket.assignedTo,
+        relatedHostname: ticket.assetHostname,
+        relatedTicketId: ticket._id,
+      });
+    }
+
     res.json({ ok: true, data: ticket });
   } catch (e) {
     res.status(500).json({ ok: false, error: "server_error" });
   }
 });
-
 
 // DELETE /api/tickets/:id — delete a ticket
 // Write access: admin and compliance-officer only
