@@ -1,248 +1,72 @@
 # RiskPatch — System Overview
 
-A complete technical walkthrough of what RiskPatch does, how it's built, and why it's built that way. This is the deep-dive companion to the top-level README.
+RiskPatch is a risk-based patch management and security compliance platform. It watches a fleet of Windows and Linux machines, figures out what's missing and what's misconfigured, attaches real vulnerability severity to each gap, and turns all of it into one risk score per machine that a compliance team can actually act on — instead of a spreadsheet nobody trusts.
 
----
+This document walks through how it actually works, end to end.
 
-## Table of Contents
+## The problem it's solving
 
-1. [What Problem This Solves](#what-problem-this-solves)
-2. [Architecture](#architecture)
-3. [Data Collection](#data-collection)
-4. [CVE Enrichment](#cve-enrichment)
-5. [The Risk Engine](#the-risk-engine)
-6. [Role-Based Access Control](#role-based-access-control)
-7. [Dashboard Pages, By Role](#dashboard-pages-by-role)
-8. [ISO/IEC 27001:2022 Mapping](#isoiec-270012022-mapping)
-9. [Remediation Ticketing](#remediation-ticketing)
-10. [Patch Deployment](#patch-deployment)
-11. [Asset Groups & Network Categories](#asset-groups--network-categories)
-12. [Notifications](#notifications)
-13. [Database Schema](#database-schema)
-14. [Known Limitations](#known-limitations)
+Most organizations without a dedicated security team handle patching the same way: someone checks periodically, updates get installed inconsistently, and compliance is a once-a-quarter manual review rather than something anyone watches continuously. Vulnerability data is out there publicly, but almost nobody connects it to their actual fleet — so a missing update is just a number, with no way to tell whether it's the one that matters or one that can wait another month. RiskPatch closes that loop automatically.
 
----
+## How data gets in
 
-## What Problem This Solves
+Two collection paths run independently, one per OS family. On Windows, a scheduled task runs PowerShell against the Windows Update API (via `PSWindowsUpdate`) and posts whatever's missing to the backend. On Linux, a scheduled shell script does the equivalent check in simulate mode, so it never actually touches a package or holds a lock just to see what's outstanding.
 
-Patch installation is often automated at the individual machine level (Windows Update, `apt`), but tracking which assets are actually up to date, which have silently failed, and which are overdue across an entire fleet is a different problem — one most small and mid-size organizations still handle manually. Compliance checks (CIS benchmarks) typically run periodically rather than continuously. Vulnerability severity data (CVE/CVSS) exists publicly but is rarely connected to the specific assets it affects.
+Compliance data comes from Wazuh's SCA module, which runs CIS benchmark checks continuously on every endpoint. The tricky part turned out to be freshness, not collection — trusting each endpoint's own internal scan timer meant some machines' data was quietly stale relative to others at any given moment, which is a real problem for a system whose whole job is comparing machines against each other. The fix was a wrapper script that forces a fresh rescan across every enrolled asset on a fixed cycle before anything gets pulled into MongoDB, so the comparison is always apples to apples.
 
-RiskPatch connects all three: what's missing, how compliant each machine is, and how severe the exposure actually is — into one number per asset, so a compliance officer or analyst can act on what matters most instead of triaging a flat list.
+## Where the severity data comes from
 
----
+Every missing patch gets checked against real vulnerability sources: Microsoft's Security Response Center for Windows KBs, a local snapshot of the Debian Security Tracker for Linux packages, and CIRCL for whether a public exploit exists. Separately, Wazuh's own vulnerability-detection module scans installed software directly, independent of whether an OS update happens to be pending — so a machine can't hide a serious vulnerability just because nothing's currently waiting to be patched. The risk engine takes whichever of the two sources is worse and uses that.
 
-## Architecture
+## The risk formula
 
-```
-┌─────────────────────┐     ┌──────────────────────┐
-│  Monitored Endpoints │     │   Patch Collector      │
-│  (Windows / Linux)    │────►│   Scripts (per OS)     │
-└──────────┬───────────┘     └──────────┬────────────┘
-           │                            │
-           ▼                            ▼
-   ┌───────────────┐          ┌──────────────────┐
-   │ Wazuh Manager  │          │  Backend Ingestion │
-   │ (CIS SCA scan) │          │  API (Express)     │
-   └───────┬────────┘          └─────────┬──────────┘
-           │                             │
-           ▼                             ▼
-   ┌───────────────┐          ┌──────────────────┐
-   │  OpenSearch    │◄─────────│   MongoDB          │
-   │ (raw scan data)│  pulled  │ (application state) │
-   └────────────────┘  every   └─────────┬──────────┘
-                        cycle             │
-                                          ▼
-                              ┌───────────────────────┐
-                              │  React Dashboard        │
-                              │  (nginx-served, JWT auth)│
-                              └───────────────────────┘
-```
-
-The backend never trusts each endpoint's own scan timer to keep data fresh — a wrapper script (`auto_rescan_all.sh`) forces a fresh rescan across every enrolled asset on a fixed interval before compliance data is pulled centrally. This was a real fix made during development after discovering that relying on independent per-endpoint timers left some assets stale relative to others at any given moment, which is exactly the kind of inconsistency a risk-ranking system can't tolerate.
-
----
-
-## Data Collection
-
-Two independent, OS-specific collection paths:
-
-- **Windows** — a scheduled task runs a PowerShell script that queries the Windows Update API via the `PSWindowsUpdate` module for missing updates, and posts the result to the backend's ingestion endpoint.
-- **Linux** — a scheduled shell script checks for missing updates via the package manager in simulate mode (so the check never installs anything or holds a package-manager lock), and posts the result the same way.
-
-**Compliance data** comes from Wazuh's Security Configuration Assessment (SCA) module, running CIS benchmark checks continuously on every endpoint. The centrally-controlled rescan cycle described above pulls fresh results into MongoDB on a fixed schedule, rather than trusting each endpoint's independent timer.
-
----
-
-## CVE Enrichment
-
-Every missing patch and every piece of installed software is checked against real vulnerability data from two independent sources:
-
-1. **Patch-derived CVEs** — missing Windows updates are matched via the Microsoft Security Response Center (MSRC) API; missing Linux packages are matched against a locally maintained Debian Security Tracker snapshot. A separate check against CIRCL's exploit-intelligence database determines whether a matched CVE has known public exploit code.
-2. **Installed-software CVEs** — Wazuh's own vulnerability-detection module independently scans each endpoint's installed software and reports CVEs found there, regardless of whether an OS-level patch is currently pending.
-
-The risk engine takes the **higher** of the two severity signals, so an asset can't return a falsely low score simply because no OS update happens to be outstanding while a serious vulnerability sits in already-installed software.
-
----
-
-## The Risk Engine
-
-The complete formula, exactly as implemented:
+This is the core of the system, and it's deliberately not a black box:
 
 ```
 BaseRisk = (0.55 × CVSSFactor) + (0.45 × ComplianceFactor)
 Score = clamp(round(BaseRisk × CriticalityMultiplier × ExposureMultiplier × 100), 0, 100)
 ```
 
-Where:
+`CVSSFactor` isn't just a raw CVSS score — it's `(CVSSValue × AgeFactor × ExploitBoost × VulnBoost) / 10`, clamped to 1. `AgeFactor` pushes the score up the longer a patch has sat unaddressed, from no boost under a week to 1.5× past ninety days. `ExploitBoost` adds 25% if a matched CVE has known public exploit code. `VulnBoost` adds a bit more if the machine is carrying several critical or high installed-software vulnerabilities on top of whatever's driving the base score. `ComplianceFactor` is just the proportion of CIS checks currently failing. The whole thing then gets scaled by how critical the asset is (0.5–1.0) and how exposed it is on the network (1.0 for internet-facing, down to 0.2 for isolated).
 
-| Term | Definition |
-|---|---|
-| `CVSSFactor` | `clamp((CVSSValue × AgeFactor × ExploitBoost × VulnBoost) / 10, 0, 1)` |
-| `CVSSValue` | The highest CVSS score across either enrichment source |
-| `AgeFactor` | Escalates the CVSS contribution the longer a patch has sat unaddressed — no boost under 7 days, up to 1.5× past 90 days |
-| `ExploitBoost` | 1.25× if any matched CVE has known public exploit code, else 1.0× |
-| `VulnBoost` | A capped multiplier that rises with the number of critical/high installed-software vulnerabilities found, independent of the exploit boost |
-| `ComplianceFactor` | Proportion of the asset's CIS benchmark checks currently failing |
-| `CriticalityMultiplier` | 0.5–1.0, based on the asset's assigned business criticality |
-| `ExposureMultiplier` | 1.0 internet-facing / 0.8 DMZ / 0.5 internal / 0.2 isolated |
+A concrete example: a domain controller with CVSS 8.0, a confirmed public exploit, 40% of its checks failing, high criticality, but sitting on an internal-only network, comes out to 33 — Medium. Move that exact same machine to internet-facing instead and nothing else changes, and it jumps to 75.5 — Critical. That's the whole point of the formula: severity alone doesn't tell you what to fix first, exposure and context do.
 
-**Priority bands:** Critical ≥75, High ≥50, Medium ≥25, Low <25.
+It's a weighted linear formula rather than something trained on data, on purpose. An analyst or an auditor can always ask "why did this score come out this way" and get a real answer traced through actual numbers, instead of a model's opinion.
 
-The formula is a deliberate weighted linear combination rather than a machine-learning model — fully explainable to an analyst or auditor asking "why did this asset score this way," which matters more for this use case than marginal predictive-accuracy gains a black-box model might offer.
+## Who sees what
 
-**Worked example** (illustrative, not a live measurement): a domain controller with CVSS 8.0, no unusually aged patches, a confirmed public exploit, no additional installed-software vulnerability boost, 40% of CIS checks failing, criticality 0.9, and internal-only exposure:
+Five roles, and the boundaries are enforced by the backend on every request, not just hidden behind menu items in the frontend:
 
-```
-CVSSFactor = clamp((8.0 × 1.0 × 1.25 × 1.0) / 10, 0, 1) = 1.0
-ComplianceFactor = 0.40
-BaseRisk = (0.55 × 1.0) + (0.45 × 0.40) = 0.73
-Score = round(0.73 × 0.9 × 0.5 × 100) = 33 → Medium
-```
+**Admin** sees and can do everything. **Compliance Officer** owns the remediation side — creating and assigning tickets, tracking resolution — but can't touch patch deployment at all. **Patch Operator** is the reverse: the only non-admin role that can actually push a patch, with zero visibility into compliance or tickets. That split is deliberate — the person applying a change shouldn't also be the person independently judging whether it satisfies compliance. **Analyst** gets broad read access across almost everything plus four dedicated reporting pages, but can't take any action anywhere. **Auditor** is the odd one out: read-only, but with access to the machine login audit log that nobody else gets, because their whole job is checking the system from outside the operational loop.
 
-The same asset with internet-facing exposure instead (`ExposureMultiplier = 1.0`) computes to **75.5 → Critical** — demonstrating that network exposure alone can move an asset between priority bands, independent of any change in patch or compliance posture.
+Each role also gets a genuinely different home dashboard — admin sees the whole fleet, compliance officer sees their ticket queue sorted by age, patch operator sees what's overdue and what they've recently deployed, analyst sees fleet health plus real usage stats instead of anything actionable.
 
----
+## Compliance mapping
 
-## Role-Based Access Control
+CIS benchmark results get mapped onto ISO/IEC 27001:2022 controls automatically, so one scan produces evidence usable for both frameworks. The mapping works by matching keywords in each check's title rather than a fixed table of check IDs, because CIS revises its identifiers periodically while what a check actually tests stays recognizable.
 
-Five roles, enforced at the backend route level (not just hidden in the frontend):
+The part worth being upfront about: controls that describe a process rather than a technical setting — staff security training, for instance — get left unmapped on purpose instead of forced into a superficial match just to inflate a coverage number. The system reports partial, genuinely verifiable coverage, not a false claim of full alignment.
 
-| Feature | Admin | Compliance Officer | Patch Operator | Analyst | Auditor |
-|---|---|---|---|---|---|
-| Asset overview, network map | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Patch backlog (view) | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Deploy patch / restart | ✅ | ❌ | ✅ | ❌ | ❌ |
-| Compliance (CIS + ISO 27001) | ✅ | ✅ | ❌ | ✅ | ✅ |
-| Vulnerabilities | ✅ | ✅ | ❌ | ✅ | ✅ |
-| Tickets (view) | ✅ | ✅ | ❌ | ✅ | ✅ |
-| Create / bulk-assign tickets | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Asset groups | ✅ | ✅ | ❌ | ✅ | ❌ |
-| Machine audit log | ✅ | ❌ | ❌ | ❌ | ✅ |
-| Analyst reporting pages | ✅ | ❌ | ❌ | ✅ | ❌ |
-| Machine registration / user management | ✅ | ❌ | ❌ | ❌ | ❌ |
+## Tickets and patching
 
-The **Patch Operator / Compliance Officer split** is the core separation-of-duties decision: the person applying a patch is never the same role independently judging whether the resulting state is compliant.
+A failing check becomes a ticket, either one at a time or in bulk — select a batch of failures and assign all of them to one person in a single action. Tickets can be advanced individually or together, and they close themselves automatically the moment a rescan shows the underlying check passing, whether or not anyone touched the ticket manually.
 
----
+Patching works at three scales: one update on one machine, every missing update on one machine in a single click, or every missing update across an entire named group of machines at once. Linux goes over SSH with a lock check first. Windows can't be patched remotely because Server policy blocks it, so a locally-running agent picks up a pending instruction and executes it with the privileges it needs. Groups can also carry a recurring weekly maintenance window, so patching just happens on schedule without anyone triggering it — with a manual override always available for anything that can't wait.
 
-## Dashboard Pages, By Role
+## Asset groups actually mean something
 
-Each role gets a home view built around its actual job rather than a single fixed dashboard:
+Every registered machine has a network category: domain-joined, physical/standalone, or a dedicated security-testing box. Groups can be locked to one of these categories, and a machine can only belong to one category-locked group at a time — trying to add a domain-joined server into a security-testing group gets rejected outright instead of silently allowed, which is exactly the kind of thing that used to slip through before this was built.
 
-- **Admin** — full fleet overview, health gauge, risk trend chart, complete asset table
-- **Compliance Officer** — "My Workload" (assigned tickets, oldest first), fleet-wide ticket-aging breakdown, worst-compliance assets ranked
-- **Patch Operator** — total outstanding updates, overdue assets, recent patch actions and outcomes
-- **Analyst** — reporting-focused: fleet health, activity feed, trend chart, plus real dashboard-usage stats
+## Staying on top of things without watching the dashboard
 
-**Analyst-exclusive reporting pages** (all with period filtering and CSV export):
-- **Login & Access Report** — authentication activity over a selected period
-- **Resolution Velocity Report** — ticket resolution speed by asset and resolver, with average time-to-resolution
-- **Patch Velocity Report** — patch deployment volume by asset and operator, plus a stale/never-collected asset alert
-- **Compliance Trend Report** — per-asset improving/stable/degrading verdict over time, with sparklines
+The notification system flags repeated failed logins against one account, a successful login from a location that account hasn't used before, and ticket lifecycle events — assigned, reassigned, resolved — delivered to whoever actually needs to know, not broadcast to everyone.
 
----
+## The database, briefly
 
-## ISO/IEC 27001:2022 Mapping
+MongoDB, built around eleven collections. `Assets` and `AssetMeta` hold identity and risk metadata; `Agent` is the machine registry with deploy credentials and network category; `Patches` and `CVEMatches` track what's missing and what CVEs matched; `ComplianceChecks` holds live CIS results, `ComplianceHistory` permanently logs every state change; `RiskSnapshots` stores score history over time; `Users`, `Tickets`, and `AgentCommands` round out accounts, remediation, and the patch action log. Almost everything keys back to `Assets.hostname`.
 
-CIS benchmark results are mapped onto ISO/IEC 27001:2022 controls via a keyword-matching utility run against each check's title at collection time — not a fixed table tied to check identifiers, since CIS revises those identifiers over time while the substance of what a check tests tends to stay recognizable.
+## What's not solved yet
 
-**Deliberately honest scope**: controls with no genuine technical fingerprint — such as staff security-awareness training or incident-reporting culture — are excluded from the mapping table entirely, rather than forced into a superficial keyword match that would inflate an apparent coverage number. The system states a coverage percentage rather than claiming full ISO 27001:2022 alignment.
+Worth stating plainly rather than glossing over. The system's been tested against a small lab, not a production-scale fleet, and testing has been manual rather than an automated regression suite. Credentials — SSH keys, Windows agent secrets — sit in MongoDB without field-level encryption at rest. The audit log has no tamper-evidence, so a direct database edit could alter it without a trace. Some network configuration is still tied to the specific lab it was built on rather than resolved through DNS. The risk formula's weights are reasoned from first principles, not tuned against real incident history, because a lab this size can't generate enough of that to tune against meaningfully. There's no automated rollback if a patch breaks something. And the ISO mapping, as covered above, is intentionally partial rather than a certification substitute.
 
----
-
-## Remediation Ticketing
-
-- Tickets can be created individually or in **bulk** — select multiple failing checks on one asset and create tickets for all of them, assigned to one person, in a single action.
-- **Bulk status changes** let many tickets be advanced together when one underlying fix resolves the same failure across several machines.
-- A ticket **closes itself automatically** once a rescan confirms the underlying check now passes — independent of whether anyone manually updates its status.
-- Every genuine compliance state transition (fixed or newly failing) is recorded in a permanent **ComplianceHistory** log, regardless of whether a ticket was ever raised for it.
-
----
-
-## Patch Deployment
-
-Three levels of granularity:
-
-1. **Single update** — one package/KB on one asset
-2. **Whole-machine** — "Patch All Missing" deploys every outstanding update on one asset in one action
-3. **Group-level** — deploy across every member of a named asset group in one action, machine by machine
-
-**Mechanism differs by OS:** Linux deployment happens over SSH, checking no other package operation is already in progress before proceeding. Windows deployment writes a pending instruction that a locally-running polling agent picks up and executes with the privileges it needs — necessary because Windows Server policy blocks remote update installation through ordinary remote-management channels.
-
-**Maintenance windows**: an asset group can be assigned a recurring weekly schedule (day + time). Outstanding updates across the group deploy automatically when the window arrives; the on-demand deployment above remains available at any time as a manual override.
-
----
-
-## Asset Groups & Network Categories
-
-Every registered machine carries a `networkCategory`: `domain` (domain-joined), `physical` (standalone/BYOD), or `security` (dedicated security-testing tool). Asset Groups can optionally be gated to one of these categories, and — critically — **a machine can only belong to one category-gated group at a time**. Attempting to add a machine already in a conflicting group is rejected with a clear error rather than silently allowed, which was a real bug found and fixed during development (a domain-joined machine could previously be added to a security-testing group with no validation at all).
-
----
-
-## Notifications
-
-A generic, role- and user-targeted notification system, with detection wired in for:
-
-- **Brute-force login attempts** — repeated failed logins against one account within a short window, alerting admin
-- **Logins from an unfamiliar location** — a successful login from an IP not previously associated with that account, alerting both the account and admin
-- **Ticket lifecycle events** — assigned, reassigned, or resolved, delivered to the relevant person
-
-The underlying infrastructure (a generic `Notification` model + reusable `createNotification()` helper) supports additional event types — new critical vulnerabilities, SLA breaches, asset going silent, and others are designed but not yet all wired in.
-
----
-
-## Database Schema
-
-MongoDB, eleven core collections:
-
-| Collection | Purpose |
-|---|---|
-| `Assets` / `AssetMeta` | Asset identity, criticality, exposure level |
-| `Agent` | Machine registry — OS, deploy method, credentials, network category |
-| `Patches` | Missing update records per asset |
-| `CVEMatches` | CVEs matched to missing patches |
-| `ComplianceChecks` | Live CIS check results per asset |
-| `ComplianceHistory` | Permanent log of every check state transition |
-| `RiskSnapshots` | Historical risk scores per asset over time |
-| `Users` | Accounts, bcrypt-hashed passwords, roles |
-| `Tickets` | Remediation tracking |
-| `AgentCommands` | Patch/restart action log, including who triggered it |
-
-`Assets.hostname` is the central reference nearly every other collection keys off.
-
----
-
-## Known Limitations
-
-Stated plainly rather than glossed over:
-
-- Tested against a small lab (a handful of VMs plus physical machines), not a production-scale fleet
-- Testing was manual/black-box rather than an automated regression test framework
-- Credentials (SSH keys, Windows agent secrets) are stored in MongoDB without field-level encryption at rest
-- The audit log has no tamper-evidence mechanism protecting it from a direct database edit
-- Several network-configuration values are still tied to the specific lab network rather than resolved via DNS or centralized config
-- The risk engine's weights were set from reasoned first principles, not tuned against real incident history (which a lab environment can't generate at meaningful volume)
-- No automated patch rollback — a health-check/pre-flight-snapshot approach is the planned, safer next step
-- The ISO 27001:2022 mapping is keyword-based and partial by design, not a certification substitute
-
-See the dissertation's Future Work chapter for the fuller roadmap this project scoped but didn't build, including SIEM-source abstraction (beyond Wazuh), cloud/CSPM coverage, staged patch rollout, and EPSS/KEV vulnerability intelligence.
+None of these are hidden — they're the actual next things to build, and they're documented as such rather than pretended away.

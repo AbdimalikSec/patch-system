@@ -28,6 +28,9 @@ RiskPatch closes that gap: it collects patch and compliance data automatically f
 
 ## Architecture
 
+
+
+
 ```
 Monitored Endpoints (Windows / Linux)
         │
@@ -128,7 +131,3 @@ riskpatch/
 Abdirizak Dahir Muhidin · Abdimalik Yusuf Mohamud · Husni Salad Mohamed · Mukhtar Yusuf Amin
 
 Jamhuriya University of Science and Technology (JUST), Faculty of Computer & Information Technology
-
-## License
-
-*(Add your chosen license here — MIT is a common default for academic/portfolio projects if you want others to freely use and build on this.)*
