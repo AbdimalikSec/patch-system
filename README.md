@@ -6,8 +6,6 @@ RiskPatch turns disconnected patch, compliance, and vulnerability data into a si
 
 Built as a graduation project at Jamhuriya University of Science and Technology (JUST), Mogadishu, Somalia.
 
----
-
 ## The Problem
 
 Most organizations without dedicated security tooling track patching manually — spreadsheets, periodic checklists, no continuous monitoring. Compliance checks run on a schedule instead of continuously. Vulnerability severity data exists publicly but is rarely connected to the specific assets it actually affects. The result: a missing patch is just a number, with no way to tell whether it's the one that matters or one that can wait.
@@ -28,7 +26,7 @@ RiskPatch closes that gap: it collects patch and compliance data automatically f
 
 ## Architecture
 
-
+![alt text](network-diagram.png)
 
 
 ```
