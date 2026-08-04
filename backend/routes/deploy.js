@@ -1,5 +1,7 @@
 const router = require("express").Router();
 const { NodeSSH } = require("node-ssh");
+const Patch = require("../models/Patch");
+const AgentCommand = require("../models/AgentCommand");
 const Agent = require("../models/Agent");
 const { requireRole } = require("../middleware/authMiddleware");
 
@@ -34,14 +36,9 @@ async function refreshConfigsFromDB() {
 }
 
 // ── POST /api/deploy/patch ────────────────────────────────────────────────────
-router.post("/patch", requireRole("admin", "patch-operator"), async (req, res) => {
-  const { hostname, package: pkg } = req.body;
-
-  if (!hostname || !pkg) {
-    return res
-      .status(400)
-      .json({ ok: false, error: "hostname and package required" });
-  }
+// Core deploy logic — installs ONE package on ONE host, shared by both the
+// single-KB route and the new "patch all missing" route below.
+async function deployOnePackage(hostname, pkg, triggeredBy, triggeredById) {
   await refreshConfigsFromDB();
   const hostKey = hostname.toLowerCase();
 
@@ -62,23 +59,21 @@ router.post("/patch", requireRole("admin", "patch-operator"), async (req, res) =
       const isLocked = parseInt((lockCheck.stdout || "").trim()) > 0;
       if (isLocked) {
         ssh.dispose();
-        return res.json({
+        return {
           ok: false,
           hostname,
           package: pkgName,
-          output:
-            "Another package installation is in progress. Wait for it to complete then try again.",
+          output: "Another package installation is in progress. Wait for it to complete then try again.",
           message: "apt locked",
-        });
+        };
       }
 
-      const AgentCommand = require("../models/AgentCommand");
       const cmd = await AgentCommand.create({
         hostname,
         kb: pkgName,
         status: "running",
-        triggeredBy: req.user?.username || "unknown",
-        triggeredById: req.user?._id,
+        triggeredBy: triggeredBy || "unknown",
+        triggeredById,
       });
 
       const result = await ssh.execCommand(
@@ -107,21 +102,17 @@ router.post("/patch", requireRole("admin", "patch-operator"), async (req, res) =
         completedAt: new Date(),
       });
 
-      return res.json({
+      return {
         ok: success,
         hostname,
         package: pkgName,
         commandId: cmd._id.toString(),
         output,
-        message: success
-          ? `${pkgName} patched on ${hostname}`
-          : `Patch may have failed — check output`,
-      });
+        message: success ? `${pkgName} patched on ${hostname}` : `Patch may have failed — check output`,
+      };
     } catch (e) {
-      try {
-        ssh.dispose();
-      } catch {}
-      return res.status(500).json({ ok: false, error: e.message });
+      try { ssh.dispose(); } catch {}
+      return { ok: false, hostname, package: pkg, error: e.message };
     }
   }
 
@@ -133,35 +124,82 @@ router.post("/patch", requireRole("admin", "patch-operator"), async (req, res) =
   if (agentDoc && agentDoc.os === "windows") {
     const kbMatch = pkg.match(/KB\d+/i);
     if (!kbMatch) {
-      return res.status(400).json({
+      return {
         ok: false,
+        hostname,
+        package: pkg,
         error: `Cannot extract KB number from "${pkg}". Windows patches require a KB number like KB5075899.`,
-      });
+      };
     }
     const kb = kbMatch[0].toUpperCase();
 
-    const AgentCommand = require("../models/AgentCommand");
     const cmd = await AgentCommand.create({
       hostname,
       kb,
-      triggeredBy: req.user?.username || "unknown",
-      triggeredById: req.user?._id,
+      triggeredBy: triggeredBy || "unknown",
+      triggeredById,
     });
 
-    return res.json({
+    return {
       ok: true,
       hostname,
       package: kb,
       commandId: cmd._id.toString(),
       output: `Agent on ${hostname} will install ${kb} within 60 seconds`,
       message: `${kb} queued for ${hostname}`,
-    });
+    };
   }
 
-  return res
-    .status(400)
-    .json({ ok: false, error: `No patch config found for ${hostname}` });
+  return { ok: false, hostname, package: pkg, error: `No patch config found for ${hostname}` };
+}
+
+// ── POST /api/deploy/patch — single package, single host (existing behavior) ─
+router.post("/patch", requireRole("admin", "patch-operator"), async (req, res) => {
+  const { hostname, package: pkg } = req.body;
+  if (!hostname || !pkg) {
+    return res.status(400).json({ ok: false, error: "hostname and package required" });
+  }
+  const result = await deployOnePackage(hostname, pkg, req.user?.username, req.user?._id);
+  const status = result.error && !result.ok ? 400 : 200;
+  res.status(status).json(result);
 });
+
+// ── POST /api/deploy/patch-all — every missing item on ONE host, one click ──
+// Reusable: fetch a host's missing patches and deploy every one of them,
+// sequentially. Used by both the single-host route below and the
+// group-level "patch all" route in groups.js.
+async function deployAllMissingForHost(hostname, triggeredBy, triggeredById) {
+  const patchDoc = await Patch.findOne({ assetHostname: hostname }).sort({ collectedAt: -1 }).lean();
+  const missing = Array.isArray(patchDoc?.missing) ? patchDoc.missing : [];
+
+  if (missing.length === 0) {
+    return { hostname, count: 0, succeeded: 0, failed: 0, results: [] };
+  }
+
+  const results = [];
+  for (const item of missing) {
+    const r = await deployOnePackage(hostname, item, triggeredBy, triggeredById);
+    results.push(r);
+  }
+
+  const succeeded = results.filter((r) => r.ok).length;
+  return { hostname, count: results.length, succeeded, failed: results.length - succeeded, results };
+}
+
+// ── POST /api/deploy/patch-all — every missing item on ONE host, one click ──
+router.post("/patch-all", requireRole("admin", "patch-operator"), async (req, res) => {
+  const { hostname } = req.body;
+  if (!hostname) {
+    return res.status(400).json({ ok: false, error: "hostname required" });
+  }
+  const result = await deployAllMissingForHost(hostname, req.user?.username, req.user?._id);
+  res.json({
+    ok: true,
+    ...result,
+    message: `Deployed ${result.succeeded}/${result.count} missing patches on ${hostname}`,
+  });
+});
+
 
 // ── GET /api/deploy/status/:hostname ─────────────────────────────────────────
 router.get("/status/:hostname", requireRole("admin", "compliance-officer", "patch-operator", "analyst"), async (req, res) => {
@@ -206,7 +244,6 @@ router.post("/restart", requireRole("admin", "patch-operator"), async (req, res)
       });
     }
 
-    const AgentCommand = require("../models/AgentCommand");
     const cmd = await AgentCommand.create({
       hostname,
       kb: "RESTART",
@@ -258,3 +295,4 @@ router.post("/apt-update", requireRole("admin", "patch-operator"), async (req, r
 });
 
 module.exports = router;
+module.exports.deployAllMissingForHost = deployAllMissingForHost;

@@ -9,10 +9,52 @@ const { requireAuth, requireRole } = require("../middleware/authMiddleware");
 const { computeRisk } = require("./risk");
 const Agent = require("../models/Agent");
 const { getVulnMatchesForAgent } = require("./vulnerabilities");
-
+const { deployAllMissingForHost } = require("./deploy");
 
 function hostnameRegex(h) {
   return { $regex: new RegExp(`^${h}$`, "i") };
+}
+
+// Maps a group's category to the Agent.networkCategory value it requires.
+// "custom" groups have no restriction — any machine can join.
+const CATEGORY_REQUIREMENT = {
+  domain: "domain",
+  physical: "physical",
+  security: "security",
+  custom: null,
+};
+
+// Checks whether a hostname is eligible to join a group of the given
+// category, and whether it's already a member of a different group.
+// Returns { ok: true } or { ok: false, error: "..." }.
+async function checkMembershipEligibility(hostname, targetGroup) {
+  const required = CATEGORY_REQUIREMENT[targetGroup.category];
+
+  if (required) {
+    const agent = await Agent.findOne({ hostname: hostnameRegex(hostname) }).lean();
+    if (!agent) {
+      return { ok: false, error: `${hostname} is not a registered machine` };
+    }
+    if (agent.networkCategory !== required) {
+      return {
+        ok: false,
+        error: `${hostname} is categorized as "${agent.networkCategory}", but "${targetGroup.name}" only accepts "${required}" machines`,
+      };
+    }
+  }
+
+  const existingGroup = await AssetGroup.findOne({
+    _id: { $ne: targetGroup._id },
+    members: hostname,
+  }).lean();
+  if (existingGroup) {
+    return {
+      ok: false,
+      error: `${hostname} is already a member of "${existingGroup.name}" — remove it there first`,
+    };
+  }
+
+  return { ok: true };
 }
 
 // Compute aggregated stats for a group
@@ -93,12 +135,36 @@ router.get("/", requireAuth, requireRole("admin", "compliance-officer", "analyst
 });
 
 // POST /api/groups — create a new group
+// POST /api/groups — create a new group
 router.post("/", requireAuth, requireRole("admin", "compliance-officer"), async (req, res) => {
   try {
-    const { name, description, color, icon, members, owner } = req.body;
+    const { name, description, color, icon, members, owner, category } = req.body;
     if (!name) return res.status(400).json({ ok: false, error: "name required" });
-    const group = await AssetGroup.create({ name, description, color, icon, members: members || [], owner });
-    res.json({ ok: true, data: group });
+
+    const cat = category || "custom";
+    if (!["domain", "physical", "security", "custom"].includes(cat)) {
+      return res.status(400).json({ ok: false, error: "Invalid category" });
+    }
+
+    const group = await AssetGroup.create({
+      name, description, color, icon, members: [], owner, category: cat,
+    });
+
+    // If initial members were provided, add them one at a time through the
+    // same eligibility check used everywhere else, rather than bypassing it.
+    const requestedMembers = members || [];
+    const rejected = [];
+    for (const hostname of requestedMembers) {
+      const check = await checkMembershipEligibility(hostname, group);
+      if (check.ok) {
+        await AssetGroup.updateOne({ _id: group._id }, { $addToSet: { members: hostname } });
+      } else {
+        rejected.push({ hostname, reason: check.error });
+      }
+    }
+
+    const finalGroup = await AssetGroup.findById(group._id).lean();
+    res.json({ ok: true, data: finalGroup, rejectedMembers: rejected });
   } catch (e) {
     if (e.code === 11000) return res.status(400).json({ ok: false, error: "Group name already exists" });
     res.status(500).json({ ok: false, error: "server_error" });
@@ -132,15 +198,26 @@ router.delete("/:id", requireAuth, requireRole("admin", "compliance-officer"), a
 });
 
 // POST /api/groups/:id/members — add member to group
+// POST /api/groups/:id/members — add member to group
 router.post("/:id/members", requireAuth, requireRole("admin", "compliance-officer"), async (req, res) => {
   try {
     const { hostname } = req.body;
-    const group = await AssetGroup.findByIdAndUpdate(
+    if (!hostname) return res.status(400).json({ ok: false, error: "hostname required" });
+
+    const group = await AssetGroup.findById(req.params.id).lean();
+    if (!group) return res.status(404).json({ ok: false, error: "Group not found" });
+
+    const check = await checkMembershipEligibility(hostname, group);
+    if (!check.ok) {
+      return res.status(400).json({ ok: false, error: check.error });
+    }
+
+    const updated = await AssetGroup.findByIdAndUpdate(
       req.params.id,
       { $addToSet: { members: hostname } },
       { new: true }
     );
-    res.json({ ok: true, data: group });
+    res.json({ ok: true, data: updated });
   } catch (e) {
     res.status(500).json({ ok: false, error: "server_error" });
   }
@@ -156,6 +233,52 @@ router.delete("/:id/members/:hostname", requireAuth, requireRole("admin", "compl
     );
     res.json({ ok: true, data: group });
   } catch (e) {
+    res.status(500).json({ ok: false, error: "server_error" });
+  }
+});
+
+// POST /api/groups/:id/patch-all — deploy every missing patch across every
+// member of this group, one machine after another. Admin-only: this is a
+// higher-blast-radius action than the per-machine "Patch All Missing"
+// button (which patch-operator already has via Backlog), so it gets the
+// same gating as other high-impact actions like machine registration.
+router.post("/:id/patch-all", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const group = await AssetGroup.findById(req.params.id).lean();
+    if (!group) return res.status(404).json({ ok: false, error: "Group not found" });
+
+    if (!group.members || group.members.length === 0) {
+      return res.json({
+        ok: true,
+        groupName: group.name,
+        memberCount: 0,
+        perHost: [],
+        message: "Group has no members",
+      });
+    }
+
+    // Sequential across hosts too — keeps load predictable and matches the
+    // same "one at a time" philosophy as the per-host deploy loop.
+    const perHost = [];
+    for (const hostname of group.members) {
+      const r = await deployAllMissingForHost(hostname, req.user?.username, req.user?._id);
+      perHost.push(r);
+    }
+
+    const totalDeployed = perHost.reduce((s, h) => s + h.count, 0);
+    const totalSucceeded = perHost.reduce((s, h) => s + h.succeeded, 0);
+
+    res.json({
+      ok: true,
+      groupName: group.name,
+      memberCount: group.members.length,
+      totalDeployed,
+      totalSucceeded,
+      perHost,
+      message: `Deployed ${totalSucceeded}/${totalDeployed} missing patches across ${group.members.length} machine(s) in "${group.name}"`,
+    });
+  } catch (e) {
+    console.error("[groups/patch-all]", e.message);
     res.status(500).json({ ok: false, error: "server_error" });
   }
 });

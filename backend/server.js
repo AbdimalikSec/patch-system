@@ -5,7 +5,7 @@ require("dotenv").config();
 const activityLogger = require("./middleware/activityLogger");
 const connectDB = require("./config/db");
 const { requireAuth } = require("./middleware/authMiddleware");
-
+const { startMaintenanceScheduler } = require("./maintenanceScheduler");
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -30,6 +30,7 @@ app.use("/api/vulnerabilities", require("./routes/vulnerabilities"));
 app.use("/api/notifications", requireAuth, require("./routes/notifications"));
 app.use("/api/snapshots",     requireAuth, require("./routes/snapshots"));
 app.use("/api/groups",        requireAuth, require("./routes/groups"));
+app.use("/api/maintenance-schedules", require("./routes/maintenanceSchedules"));
 app.use("/api/agent",         require("./routes/agentCommands"));
 app.use("/api/tickets",       requireAuth, require("./routes/tickets"));
 app.use("/api/compliance-history", require("./routes/complianceHistory"));
@@ -39,4 +40,7 @@ app.use("/api/discovery", require("./routes/discovery"));
 app.use("/api/user-activity", require("./routes/userActivity"));
 app.use("/api/system-ops", require("./routes/systemOps"));
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  startMaintenanceScheduler();
+});

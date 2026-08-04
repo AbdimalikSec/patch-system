@@ -7,6 +7,8 @@ const Patch = require("../models/Patch");
 const ComplianceCheck = require("../models/ComplianceCheck");
 const axios = require("axios");
 const https = require("https");
+const { SUPPORTED_OS } = require("../config/osTypes");
+
 
 // ── GET /api/machines — list all machines (admin) ─────────────────────────────
 router.get("/", requireAuth, requireAdmin, async (req, res) => {
@@ -26,7 +28,7 @@ router.get("/", requireAuth, requireAdmin, async (req, res) => {
 // ── POST /api/machines — add a new machine (admin) ────────────────────────────
 router.post("/", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const {
+      const {
       hostname,
       os,
       ip,
@@ -39,19 +41,23 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
       role,
       exposureLevel,
       wazuhId,
+      networkCategory,
     } = req.body;
 
     if (!hostname) return res.status(400).json({ ok: false, error: "hostname required" });
     if (deployMethod && !["agent", "ssh"].includes(deployMethod))
       return res.status(400).json({ ok: false, error: "deployMethod must be agent or ssh" });
-    if (!os || !["windows", "linux"].includes(os))
+   if (!os || !SUPPORTED_OS.includes(os))    
       return res.status(400).json({ ok: false, error: "os must be windows or linux" });
+    if (networkCategory && !["domain", "physical", "security"].includes(networkCategory))
+      return res.status(400).json({ ok: false, error: "networkCategory must be domain, physical, or security" });
+
 
     const existing = await Agent.findOne({ hostname });
     if (existing)
       return res.status(409).json({ ok: false, error: `Machine "${hostname}" already exists` });
 
-    const agentDoc = {
+      const agentDoc = {
       hostname,
       os,
       ip: ip || "",
@@ -64,6 +70,7 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
       role: role || "workstation",
       exposureLevel: exposureLevel || "internal",
       wazuhId: wazuhId || "",
+      networkCategory: networkCategory || "physical",
       enrolled: false,
       addedVia: "dashboard",
     };

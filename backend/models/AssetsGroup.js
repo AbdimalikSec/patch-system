@@ -12,9 +12,18 @@ const AssetGroupSchema = new mongoose.Schema(
     icon:        { type: String, default: "🗂️" },
     members:     { type: [String], default: [] }, // array of hostnames
     owner:       { type: String, default: "IT" },
+    // Gates which machines are eligible to join this group, and enables
+    // real exclusivity enforcement (a machine can only belong to one
+    // category-gated group at a time). "custom" groups have no eligibility
+    // restriction — for organizational groupings unrelated to network
+    // category, e.g. a "Finance Department" group.
+    category: {
+      type: String,
+      enum: ["domain", "physical", "security", "custom"],
+      default: "custom",
+    },
   },
   { timestamps: true }
 );
-
 module.exports = mongoose.models.AssetGroup ||
   mongoose.model("AssetGroup", AssetGroupSchema);

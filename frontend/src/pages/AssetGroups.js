@@ -14,14 +14,16 @@ const DEFAULT_GROUPS = [
     icon: "🏛️",
     members: [],
     owner: "IT Infrastructure",
+    category: "domain",
   },
   {
     name: "Security Operations",
-    description: "Security testing and monitoring assets",
+    description: "Dedicated security-testing machines",
     color: "hsl(350,100%,65%)",
     icon: "🛡️",
     members: [],
     owner: "IT Security",
+    category: "security",
   },
   {
     name: "Physical / BYOD Workstations",
@@ -30,6 +32,7 @@ const DEFAULT_GROUPS = [
     icon: "💻",
     members: [],
     owner: "IT Operations",
+    category: "physical",
   },
 ];
 
@@ -85,8 +88,19 @@ function GroupCard({ group, allAssets = [], onDelete, onRemoveMember, onAddMembe
             background: `${group.color}18`, border: `1px solid ${group.color}44`,
             display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
           }}>{group.icon}</div>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 3 }}>{group.name}</div>
+           <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+              <div style={{ fontWeight: 800, fontSize: 15 }}>{group.name}</div>
+              {group.category && group.category !== "custom" && (
+                <span style={{
+                  fontSize: 9.5, fontWeight: 700, padding: "2px 8px", borderRadius: 4,
+                  textTransform: "uppercase", background: "var(--surface)",
+                  border: "1px solid var(--line)", color: "var(--muted)",
+                }}>
+                  {group.category} only
+                </span>
+              )}
+            </div>
             <div style={{ fontSize: 12, color: "var(--muted)" }}>{group.description}</div>
             <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>
               Owner: <span style={{ color: "var(--text)" }}>{group.owner}</span>
@@ -187,7 +201,7 @@ export default function AssetGroups() {
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast]           = useState(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm]             = useState({ name: "", description: "", icon: "🗂️", owner: "IT", color: "hsl(210,80%,60%)" });
+  const [form, setForm]             = useState({ name: "", description: "", icon: "🗂️", owner: "IT", color: "hsl(210,80%,60%)", category: "custom" });
 
   function showToast(type, msg) {
     setToast({ type, msg });
@@ -234,8 +248,8 @@ async function load() {
     try {
       await axios.post(`${API}/api/groups`, { ...form, members: [] });
       showToast("ok", `Group "${form.name}" created`);
-      setForm({ name: "", description: "", icon: "🗂️", owner: "IT", color: "hsl(210,80%,60%)" });
-      setShowCreate(false);
+      setForm({ name: "", description: "", icon: "🗂️", owner: "IT", color: "hsl(210,80%,60%)", category: "custom" }); 
+      setShowCreate(false)
       load();
     } catch (e) {
       showToast("err", e?.response?.data?.error || "Failed to create group");
@@ -261,12 +275,14 @@ async function load() {
       load();
     } catch { showToast("err", "Failed to remove member"); }
   }
-
+ 
   async function handleAddMember(groupId, hostname) {
     try {
       await axios.post(`${API}/api/groups/${groupId}/members`, { hostname });
       load();
-    } catch { showToast("err", "Failed to add member"); }
+    } catch (e) {
+      showToast("err", e?.response?.data?.error || "Failed to add member");
+    }
   }
 
   const totalAssets    = [...new Set(groups.flatMap(g => g.members))].length;
@@ -337,7 +353,8 @@ async function load() {
           </div>
 
           {/* Row 2: description + owner side by side */}
-          <div style={{ display: "flex", gap: 12, marginBottom: 16, alignItems: "flex-end" }}>
+          {/* Row 2: description + owner side by side */}
+          <div style={{ display: "flex", gap: 12, marginBottom: 12, alignItems: "flex-end" }}>
             <div style={{ flex: 2 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", marginBottom: 5 }}>Description</div>
               <input className="input" style={{ width: "100%", boxSizing: "border-box" }}
@@ -351,6 +368,22 @@ async function load() {
                 placeholder="IT"
                 value={form.owner}
                 onChange={e => setForm(f => ({ ...f, owner: e.target.value }))} />
+            </div>
+          </div>
+
+          {/* Row: category */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", marginBottom: 5 }}>Eligibility Category</div>
+            <select className="input" style={{ width: "100%", maxWidth: 320, boxSizing: "border-box" }}
+              value={form.category}
+              onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
+              <option value="custom">Custom — any machine can join</option>
+              <option value="domain">Domain-joined only</option>
+              <option value="physical">Physical / standalone only</option>
+              <option value="security">Security testing tools only</option>
+            </select>
+            <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4, lineHeight: 1.4 }}>
+              A machine can only belong to one category-gated group at a time.
             </div>
           </div>
 

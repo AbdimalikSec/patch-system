@@ -27,8 +27,10 @@ export default function Machines() {
   const [criticality, setCriticality] = useState(0.5);
   const [exposureLevel, setExposureLevel] = useState("internal");
   const [deployMethod, setDeployMethod] = useState("agent");
+  const [networkCategory, setNetworkCategory] = useState("domain");  
   const [username, setUsername] = useState("");
   const [sshKeyPath, setSshKeyPath] = useState("/home/patch/.ssh/patch_key");
+  
 
   // Generated script
   const [script, setScript] = useState("");
@@ -70,7 +72,7 @@ export default function Machines() {
       setCreating(true);
       setErr("");
       setSuccess("");
-      const body = {
+        const body = {
         hostname: hostname.trim(),
         os,
         ip: ip.trim(),
@@ -78,7 +80,9 @@ export default function Machines() {
         criticality,
         exposureLevel,
         deployMethod,
+        networkCategory,
         username: username.trim(),
+        password: "",
         sshKeyPath: deployMethod === "ssh" ? sshKeyPath.trim() : "",
       };
       await axios.post(`${API}/api/machines`, body);
@@ -98,6 +102,7 @@ export default function Machines() {
       setRole("workstation");
       setCriticality(0.5);
       setExposureLevel("internal");
+      setNetworkCategory("domain");
       loadMachines();
     } catch (e) {
       setErr(e?.response?.data?.error || "Failed to add machine");
@@ -289,14 +294,30 @@ export default function Machines() {
           </div>
         </div>
 
-        <div
+       <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
+            gridTemplateColumns: "1fr 1fr 1fr 1fr",
             gap: 12,
             marginBottom: 16,
           }}
         >
+          <div>
+            <div style={labelStyle}>Network Category</div>
+            <select
+              className="input"
+              style={{ width: "100%", boxSizing: "border-box" }}
+              value={networkCategory}
+              onChange={(e) => setNetworkCategory(e.target.value)}
+            >
+              <option value="domain">Domain-joined</option>
+              <option value="physical">Physical / standalone</option>
+              <option value="security">Security testing tool</option>
+            </select>
+            <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4, lineHeight: 1.4 }}>
+              Determines which Asset Groups this machine is eligible to join.
+            </div>
+          </div>
           <div>
             <div style={labelStyle}>Role</div>
             <select
@@ -444,7 +465,7 @@ export default function Machines() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--line)" }}>
-                {["Hostname", "OS", "IP", "Role", "Criticality", "Status", "Actions"].map(
+                 {["Hostname", "OS", "IP", "Category", "Role", "Criticality", "Status", "Actions"].map(
                   (h) => (
                     <th
                       key={h}
@@ -479,10 +500,31 @@ export default function Machines() {
                   <td style={{ padding: "16px 24px", fontSize: 13 }}>
                     {(m.os || "-").toUpperCase()}
                   </td>
-                  <td
+                   <td
                     style={{ padding: "16px 24px", fontSize: 13, color: "var(--muted)" }}
                   >
                     {m.ip || "-"}
+                  </td>
+                  <td style={{ padding: "16px 24px" }}>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        padding: "3px 9px",
+                        borderRadius: 4,
+                        textTransform: "uppercase",
+                        background:
+                          m.networkCategory === "domain" ? "hsla(210,80%,60%,0.12)"
+                          : m.networkCategory === "security" ? "hsla(350,100%,65%,0.12)"
+                          : "hsla(45,100%,50%,0.12)",
+                        color:
+                          m.networkCategory === "domain" ? "hsl(210,80%,50%)"
+                          : m.networkCategory === "security" ? "hsl(350,100%,55%)"
+                          : "hsl(45,90%,42%)",
+                      }}
+                    >
+                      {m.networkCategory || "physical"}
+                    </span>
                   </td>
                   <td style={{ padding: "16px 24px", fontSize: 13 }}>{m.role}</td>
                   <td style={{ padding: "16px 24px", fontSize: 13 }}>
