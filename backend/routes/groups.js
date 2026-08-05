@@ -259,8 +259,13 @@ router.post("/:id/patch-all", requireAuth, requireRole("admin"), async (req, res
 
     // Sequential across hosts too — keeps load predictable and matches the
     // same "one at a time" philosophy as the per-host deploy loop.
-    const perHost = [];
+     const perHost = [];
     for (const hostname of group.members) {
+      const agentDoc = await Agent.findOne({ hostname: { $regex: new RegExp(`^${hostname}$`, "i") } }).lean();
+      if (agentDoc?.excludeFromAutoDeploy) {
+        perHost.push({ hostname, count: 0, succeeded: 0, failed: 0, results: [], skipped: "excluded from automated deployment" });
+        continue;
+      }
       const r = await deployAllMissingForHost(hostname, req.user?.username, req.user?._id);
       perHost.push(r);
     }

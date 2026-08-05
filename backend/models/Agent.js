@@ -34,10 +34,17 @@ const AgentSchema = new mongoose.Schema(
       default: "physical",
     },   
 
-    // Enrollment tracking
+   // Enrollment tracking
     enrolled:    { type: Boolean, default: false }, // true once Wazuh agent checks in
     addedVia:    { type: String, default: "manual" }, // "manual" | "dashboard"
     createdAt:   { type: Date, default: Date.now },
+    // Safety flag — set true for infrastructure the platform itself depends on
+    // (e.g. PATCH-SRV). Excluded from automated/scheduled patch deployment
+    // (maintenance windows, group-level "Patch All") even if it's a member of
+    // a group with a window configured. Manual, single-machine patching by a
+    // human still works normally regardless of this flag — only automatic
+    // paths respect it.
+    excludeFromAutoDeploy: { type: Boolean, default: false }, 
   },
   { timestamps: true }
 );

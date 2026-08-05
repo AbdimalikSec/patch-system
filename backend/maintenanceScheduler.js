@@ -1,6 +1,7 @@
 const MaintenanceSchedule = require("./models/MaintenanceSchedule");
 const AssetGroup = require("./models/AssetsGroup");
 const { deployAllMissingForHost } = require("./routes/deploy");
+const Agent = require("./models/Agent");
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // check every 5 minutes
 
@@ -32,6 +33,11 @@ async function checkAndRunSchedules() {
       console.log(`[maintenanceScheduler] Running scheduled patch window for group "${group.name}" (${group.members.length} machines)`);
 
       for (const hostname of group.members) {
+        const agentDoc = await Agent.findOne({ hostname: { $regex: new RegExp(`^${hostname}$`, "i") } }).lean();
+        if (agentDoc?.excludeFromAutoDeploy) {
+          console.log(`[maintenanceScheduler] Skipping ${hostname} — excluded from automated deployment`);
+          continue;
+        }
         try {
           await deployAllMissingForHost(hostname, "scheduled-maintenance", null);
         } catch (e) {
