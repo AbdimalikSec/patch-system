@@ -23,6 +23,7 @@ app.use("/api/health",       require("./routes/health"));
 app.use("/api/patches",       requireAuth, require("./routes/patches"));
 app.use("/api/compliance",    requireAuth, require("./routes/compliance"));
 app.use("/api/platform-compliance", require("./routes/platformCompliance"));
+app.use("/api/compliance-evidence", require("./routes/complianceEvidence"));
 app.use("/api/meta",          requireAuth, require("./routes/meta"));
 app.use("/api/risk",          requireAuth, require("./routes/risk"));
 app.use("/api/assets",        requireAuth, require("./routes/assets"));

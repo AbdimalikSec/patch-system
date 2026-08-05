@@ -26,6 +26,7 @@ import ResolutionReport from "./pages/ResolutionReport";
 import ComplianceTrendReport from "./pages/ComplianceTrendReport";
 import PatchVelocityReport from "./pages/PatchVelocityReport";
 import PlatformCompliance from "./pages/PlatformCompliance";
+import ComplianceEvidence from "./pages/ComplianceEvidence";
 
 export default function App() {
   return (
@@ -64,6 +65,9 @@ export default function App() {
           <Route path="/compliance-history" element={
              <ProtectedRoute roles={["admin", "compliance-officer", "analyst", "auditor"]}><ComplianceHistory /></ProtectedRoute>
           } />
+          <Route path="/compliance-evidence" element={
+            <ProtectedRoute roles={["admin", "compliance-officer", "analyst", "auditor"]}><ComplianceEvidence /></ProtectedRoute>
+         } />
           <Route path="/tickets" element={
             <ProtectedRoute roles={["admin", "compliance-officer", "analyst", "auditor"]}><Tickets /></ProtectedRoute>
           } />
