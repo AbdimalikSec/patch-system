@@ -240,6 +240,7 @@ const NAV_GROUPS = [
     items: [
       { to: "/compliance", label: "Compliance", icon: "compliance", roles: ["admin", "compliance-officer", "analyst", "auditor"] },
       { to: "/compliance-history", label: "Compliance History", icon: "evaluation", roles: ["admin", "compliance-officer", "analyst", "auditor"] },
+      { to: "/platform-compliance", label: "Platform Compliance", icon: "compliance", roles: ["admin", "compliance-officer", "analyst", "auditor"] },
       { to: "/vulnerabilities", label: "Vulnerabilities", icon: "compliance", roles: ["admin", "compliance-officer", "analyst", "auditor"] },
       { to: "/tickets", label: "Tickets", icon: "tickets", roles: ["admin", "compliance-officer", "analyst", "auditor"] },
       { to: "/resolution-report", label: "Resolution Report", icon: "evaluation", roles: ["admin", "compliance-officer", "analyst", "auditor"] },
