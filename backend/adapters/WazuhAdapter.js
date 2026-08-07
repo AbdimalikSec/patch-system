@@ -114,4 +114,59 @@ async function getComplianceResults(agentId, hostname) {
   return unique.map((d) => normalise(d, hostname, agentId));
 }
 
-module.exports = { getComplianceResults };
+// ── Pull vulnerability state docs, optionally filtered by agent ─────────────
+async function fetchVulnDocs(agentId) {
+  const VULN_INDEX = "wazuh-states-vulnerabilities-*";
+  const must = [];
+  if (agentId) must.push({ term: { "agent.id": agentId } });
+
+  const body = {
+    size: 500,
+    _source: ["agent", "package", "vulnerability"],
+    query: must.length ? { bool: { must } } : { match_all: {} },
+    sort: [{ "vulnerability.score.base": "desc" }],
+  };
+
+  const allDocs = [];
+  let searchAfter = null;
+
+  while (true) {
+    if (searchAfter) body.search_after = searchAfter;
+    const res = await client.post(`/${VULN_INDEX}/_search`, body);
+    const hits = res.data.hits.hits;
+    if (!hits || hits.length === 0) break;
+    allDocs.push(...hits);
+    if (hits.length < body.size) break;
+    searchAfter = hits[hits.length - 1].sort;
+    if (allDocs.length >= 5000) break;
+  }
+  return allDocs;
+}
+
+function normaliseVuln(doc) {
+  const v = doc._source.vulnerability || {};
+  const pkg = doc._source.package || {};
+  return {
+    cve: v.id,
+    package: pkg.name || "",
+    version: pkg.version || "",
+    condition: v.scanner?.condition || "",
+    severity: v.severity || "",
+    cvssScore: v.score?.base ?? null,
+    published: v.published_at || null,
+    updated: v.detected_at || null,
+    references: [v.reference, v.scanner?.reference].filter(Boolean),
+  };
+}
+
+/**
+ * getVulnerabilities(agentId) — same public-contract idea as
+ * getComplianceResults(): everything Wazuh-specific stays above this line.
+ */
+async function getVulnerabilities(agentId) {
+  const docs = await fetchVulnDocs(agentId);
+  return docs.map(normaliseVuln);
+}
+
+module.exports = { getComplianceResults, getVulnerabilities, fetchVulnDocs, normaliseVuln };
+

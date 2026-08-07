@@ -3,96 +3,40 @@ require("dotenv").config();
 const router = require("express").Router();
 const { requireAuth, requireRole } = require("../middleware/authMiddleware");
 const Agent = require("../models/Agent");
-const axios = require("axios");
-const https = require("https");
-
-const INDEXER_URL  = process.env.INDEXER_URL  || "https://192.168.0.20:9200";
-const INDEXER_USER = process.env.INDEXER_USER || "admin";
-const INDEXER_PASS = process.env.INDEXER_PASS || "Index3rPass+2026";
-
-// New Wazuh vulnerability module (v4.8+) stores current-state documents here —
-// each doc IS the latest state for one (agent, package, CVE) combination.
-// No @timestamp field exists on these docs, and no separate status field either;
-// unlike the old wazuh-alerts-4.x-* index this replaces.
-const INDEX = "wazuh-states-vulnerabilities-*";
-
-const client = axios.create({
-  baseURL: INDEXER_URL,
-  auth: { username: INDEXER_USER, password: INDEXER_PASS },
-  httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-  timeout: 30000,
-});
-
-// ── Pull vulnerability state docs, optionally filtered by agent ─────────────
-async function fetchVulnDocs(agentId) {
-  const must = [];
-  if (agentId) must.push({ term: { "agent.id": agentId } });
-
-  const body = {
-    size: 500,
-    _source: ["agent", "package", "vulnerability"],
-    query: must.length ? { bool: { must } } : { match_all: {} },
-    sort: [{ "vulnerability.score.base": "desc" }],
-  };
-
-  const allDocs = [];
-  let searchAfter = null;
-
-  while (true) {
-    if (searchAfter) body.search_after = searchAfter;
-    const res = await client.post(`/${INDEX}/_search`, body);
-    const hits = res.data.hits.hits;
-    if (!hits || hits.length === 0) break;
-    allDocs.push(...hits);
-    if (hits.length < body.size) break;
-    searchAfter = hits[hits.length - 1].sort;
-    if (allDocs.length >= 5000) break; // safety cap
-  }
-  return allDocs;
-}
-
-function normalise(doc) {
-  const v = doc._source.vulnerability || {};
-  const pkg = doc._source.package || {};
-  return {
-    cve: v.id,
-    package: pkg.name || "",
-    version: pkg.version || "",
-    condition: v.scanner?.condition || "",
-    severity: v.severity || "",
-    cvssScore: v.score?.base ?? null,
-    published: v.published_at || null,
-    updated: v.detected_at || null,
-    references: [v.reference, v.scanner?.reference].filter(Boolean),
-  };
-}
+const SupplementalVulnMatch = require("../models/SupplementalVulnMatch");
+const wazuhAdapter = require("../adapters/WazuhAdapter");
 
 // ── GET /api/vulnerabilities/summary — CVE counts per enrolled machine ──────
 router.get("/summary", requireAuth, requireRole("admin", "compliance-officer", "analyst", "auditor"), async (req, res) => {
   try {
     const agents = await Agent.find({ wazuhId: { $ne: "" } }).lean();
 
-    // Start every enrolled machine at zero so a clean/unscanned machine still
-    // shows up on the page instead of silently vanishing from the list.
-    const byHost = new Map();
+    const byHost = new Map(); // keyed by wazuhId
+    const byHostname = new Map(); // same objects, keyed by hostname for the supplemental merge below
     for (const a of agents) {
-      byHost.set(a.wazuhId, {
-        hostname: a.hostname,
-        os: a.os,
-        critical: 0,
-        high: 0,
-        medium: 0,
-        low: 0,
-        total: 0,
-      });
+      const entry = { hostname: a.hostname, os: a.os, critical: 0, high: 0, medium: 0, low: 0, total: 0 };
+      byHost.set(a.wazuhId, entry);
+      byHostname.set(a.hostname.toLowerCase(), entry);
     }
 
-    const docs = await fetchVulnDocs();
+    const docs = await wazuhAdapter.fetchVulnDocs();
     for (const doc of docs) {
       const agentId = doc._source.agent.id;
       const g = byHost.get(agentId);
-      if (!g) continue; // finding for an agent not in our DB — skip (e.g. BR-staff)
+      if (!g) continue;
       const sev = (doc._source.vulnerability.severity || "").toLowerCase();
+      if (g[sev] !== undefined) g[sev]++;
+      g.total++;
+    }
+
+    // Merge in supplemental matches — real installed-software CVEs found by
+    // our own Debian Security Tracker lookup, for agents (like kali) where
+    // Wazuh's own vulnerability engine has no coverage at all.
+    const supplemental = await SupplementalVulnMatch.find({}).lean();
+    for (const match of supplemental) {
+      const g = byHostname.get((match.hostname || "").toLowerCase());
+      if (!g) continue;
+      const sev = (match.severity || "").toLowerCase();
       if (g[sev] !== undefined) g[sev]++;
       g.total++;
     }
@@ -111,35 +55,63 @@ router.get("/:hostname", requireAuth, requireRole("admin", "compliance-officer",
       hostname: { $regex: new RegExp(`^${req.params.hostname}$`, "i") },
     }).lean();
 
-    if (!agent || !agent.wazuhId) {
-      return res.status(404).json({
-        ok: false,
-        error: "No Wazuh agent ID on file for this machine",
-      });
+    if (!agent) {
+      return res.status(404).json({ ok: false, error: "Machine not found" });
     }
 
-    const docs = await fetchVulnDocs(agent.wazuhId);
-    const items = docs.map(normalise);
+    const wazuhItems = agent.wazuhId ? await wazuhAdapter.getVulnerabilities(agent.wazuhId) : [];
 
-    res.json({
-      ok: true,
-      hostname: agent.hostname,
-      count: items.length,
-      data: items,
-    });
+    const supplemental = await SupplementalVulnMatch.find({ hostname: agent.hostname }).lean();
+    const supplementalItems = supplemental.map((s) => ({
+      cve: s.cveId,
+      package: s.packageName,
+      version: s.version,
+      condition: "",
+      severity: s.severity,
+      cvssScore: s.cvssScore,
+      published: null,
+      updated: s.detectedAt,
+      references: [],
+      source: s.source,
+    }));
+
+    const items = [...wazuhItems, ...supplementalItems];
+
+    res.json({ ok: true, hostname: agent.hostname, count: items.length, data: items });
   } catch (e) {
     console.error("[vulnerabilities/:hostname]", e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-// Reusable helper — get normalised vulnerability matches for one agent,
-// so the risk engine (risk.js) can factor in real installed-software CVEs.
+// Reusable helper — get normalised vulnerability matches for one agent, so
+// the risk engine (risk.js) can factor in real installed-software CVEs.
+// Merges in the supplemental (Debian-tracker fallback) matches too, for
+// agents Wazuh's own engine can't cover.
 async function getVulnMatchesForAgent(wazuhId) {
   if (!wazuhId) return [];
   try {
-    const docs = await fetchVulnDocs(wazuhId);
-    return docs.map(normalise);
+    const wazuhItems = await wazuhAdapter.getVulnerabilities(wazuhId);
+
+    const agent = await Agent.findOne({ wazuhId }).lean();
+    let supplementalItems = [];
+    if (agent?.hostname) {
+      const supplemental = await SupplementalVulnMatch.find({ hostname: agent.hostname }).lean();
+      supplementalItems = supplemental.map((s) => ({
+        cve: s.cveId,
+        package: s.packageName,
+        version: s.version,
+        condition: "",
+        severity: s.severity,
+        cvssScore: s.cvssScore,
+        published: null,
+        updated: s.detectedAt,
+        references: [],
+        source: s.source,
+      }));
+    }
+
+    return [...wazuhItems, ...supplementalItems];
   } catch (e) {
     console.error("[getVulnMatchesForAgent]", e.message);
     return [];
