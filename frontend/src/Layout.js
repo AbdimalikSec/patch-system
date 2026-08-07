@@ -377,6 +377,15 @@ function NotificationBell() {
     } catch {}
   }
 
+  async function handleClearAll() {
+    if (!window.confirm("Clear all notifications? This only removes them from your own view.")) return;
+    try {
+      await axios.post(`${API}/api/notifications/clear-all`);
+      setNoti([]);
+      setUnreadCount(0);
+    } catch {}
+  }
+
   return (
     <div ref={dropdownRef} style={{ position: "relative" }}>
       <button
@@ -442,7 +451,7 @@ function NotificationBell() {
             right: 0,
             width: 380,
             maxHeight: 480,
-            background: "#1a1d27",
+            background: "var(--panel)",
             border: "1px solid var(--line)",
             borderRadius: 12,
             boxShadow: "0 8px 32px rgba(0,0,0,0.8)",
@@ -479,21 +488,38 @@ function NotificationBell() {
                 </div>
               )}
               {notifications.length > 0 && (
-                <button
-                  onClick={handleReadAll}
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 600,
-                    padding: "3px 10px",
-                    borderRadius: 4,
-                    background: "transparent",
-                    border: "1px solid var(--line)",
-                    color: "var(--muted)",
-                    cursor: "pointer",
-                  }}
-                >
-                  Mark all read
-                </button>
+                <>
+                  <button
+                    onClick={handleReadAll}
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      padding: "3px 10px",
+                      borderRadius: 4,
+                      background: "transparent",
+                      border: "1px solid var(--line)",
+                      color: "var(--muted)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Mark all read
+                  </button>
+                  <button
+                    onClick={handleClearAll}
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      padding: "3px 10px",
+                      borderRadius: 4,
+                      background: "transparent",
+                      border: "1px solid hsla(350,75%,50%,0.3)",
+                      color: "hsl(350,75%,50%)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Clear all
+                  </button>
+                </>
               )}
             </div>
           </div>

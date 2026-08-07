@@ -37,8 +37,9 @@ router.get("/", requireAuth, async (req, res) => {
     const { username, role } = req.user;
     const limit = parseInt(req.query.limit) || 50;
 
-    const notifications = await Notification.find({
+      const notifications = await Notification.find({
       $or: [{ targetUsername: username }, { targetRoles: role }],
+      clearedBy: { $ne: username },
     })
       .sort({ createdAt: -1 })
       .limit(limit)
@@ -83,5 +84,23 @@ router.post("/read-all", requireAuth, async (req, res) => {
     res.status(500).json({ ok: false, error: "server_error" });
   }
 });
+
+// POST /api/notifications/clear-all — remove every currently-visible
+// notification from THIS user's view only (role-shared notifications stay
+// visible to anyone else who was also targeted).
+router.post("/clear-all", requireAuth, async (req, res) => {
+  try {
+    const { username, role } = req.user;
+    await Notification.updateMany(
+      { $or: [{ targetUsername: username }, { targetRoles: role }] },
+      { $addToSet: { clearedBy: username } },
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: "server_error" });
+  }
+});
+
+module.exports = router;
 
 module.exports = router;

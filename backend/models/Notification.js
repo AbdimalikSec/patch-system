@@ -19,6 +19,10 @@ const NotificationSchema = new mongoose.Schema(
     // Per-user read tracking — needed because a role-targeted notification is
     // shared by many people, each of whom reads it independently.
     readBy: { type: [String], default: [] },
+     // Mirrors readBy — lets one person clear a shared, role-targeted
+    // notification from their own view without deleting it for everyone
+    // else who was also targeted by it.
+    clearedBy: { type: [String], default: [] },
   },
   { timestamps: true },
 );
