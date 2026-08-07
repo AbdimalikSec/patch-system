@@ -90,11 +90,22 @@ async function deployOnePackage(hostname, pkg, triggeredBy, triggeredById) {
 
       ssh.dispose();
 
-      const output = (result.stdout + result.stderr).slice(0, 1000);
+       const output = (result.stdout + result.stderr).slice(0, 1000);
+      // A real failure to fetch/install always prints one of these markers,
+      // even when the exit code or a loose "upgraded" mention might suggest
+      // otherwise — apt prints its *plan* ("will be upgraded") before it
+      // even attempts the download, so that text alone is not proof the
+      // install actually completed.
+      const hasFetchError =
+        output.includes("Failed to fetch") ||
+        output.includes("Unable to fetch") ||
+        output.includes("Temporary failure resolving") ||
+        output.includes("E: ");
       const success =
-        result.code === 0 ||
-        output.includes("already the newest") ||
-        output.includes("upgraded");
+        !hasFetchError &&
+        (result.code === 0 ||
+          output.includes("already the newest") ||
+          output.includes("Setting up"));
 
       await AgentCommand.findByIdAndUpdate(cmd._id, {
         status: success ? "success" : "failed",

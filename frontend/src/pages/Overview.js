@@ -39,7 +39,7 @@ function exportCSV(rows) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "riskpatch_overview.csv";
+  a.download = "triarch_overview.csv";
   a.click();
   URL.revokeObjectURL(url);
 }

@@ -143,10 +143,10 @@ function CVEDetailTable({ hostname }) {
           </button>
         ))}
       </div>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+         <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr style={{ borderBottom: "1px solid var(--line)" }}>
-            {["CVE", "Package", "Version", "Severity", "Condition", "Published"].map((h) => (
+            {["CVE", "Package", "Version", "Severity", "Condition", "Published", "Source"].map((h) => (
               <th
                 key={h}
                 style={{
@@ -184,6 +184,30 @@ function CVEDetailTable({ hostname }) {
               <td style={{ padding: "8px 12px", fontSize: 11, color: "var(--muted)" }}>{c.condition || "-"}</td>
               <td style={{ padding: "8px 12px", fontSize: 11, color: "var(--muted)" }}>
                 {c.published ? new Date(c.published).toLocaleDateString() : "-"}
+              </td>
+              <td style={{ padding: "8px 12px" }}>
+                {c.source === "debian-tracker-fallback" ? (
+                  <span
+                    title="Wazuh's vulnerability engine has no coverage for this OS — detected via our own Debian Security Tracker lookup instead"
+                    style={{
+                      fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 4,
+                      background: "hsla(280,60%,60%,0.12)", color: "hsl(280,60%,50%)",
+                      border: "1px solid hsla(280,60%,60%,0.3)",
+                    }}
+                  >
+                    Fallback
+                  </span>
+                ) : (
+                  <span
+                    style={{
+                      fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 4,
+                      background: "hsla(210,80%,60%,0.1)", color: "hsl(210,80%,50%)",
+                      border: "1px solid hsla(210,80%,60%,0.25)",
+                    }}
+                  >
+                    Wazuh
+                  </span>
+                )}
               </td>
             </tr>
           ))}

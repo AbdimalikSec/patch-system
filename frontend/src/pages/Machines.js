@@ -224,7 +224,7 @@ export default function Machines() {
           >
             Copy this script and run it ONCE on {scriptHost} as Administrator
             (Windows) or with sudo (Linux). It installs the Wazuh agent, the
-            patch collector, and the RiskPatch agent, then registers the
+            patch collector, and the Triarch agent, then registers the
             scheduled tasks. The machine will appear automatically once it
             checks in.
           </div>
@@ -422,7 +422,7 @@ export default function Machines() {
           }}
         >
             {deployMethod === "agent"
-            ? "Agent method: patching is handled by the RiskPatch agent polling outward — no credentials stored."
+            ? "Agent method: patching is handled by the Triarch agent polling outward — no credentials stored."
             : "SSH method: uses an SSH key to reach the Linux machine for patching."}
         </div>
 

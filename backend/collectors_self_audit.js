@@ -1,10 +1,12 @@
-const { execSync } = require("child_process");
+const { exec } = require("child_process");
+const { promisify } = require("util");
+const execAsync = promisify(exec);
 const path = require("path");
 const PlatformVulnerability = require("./models/PlatformVulnerability");
 
 /**
  * Runs `npm audit --json` against this backend's own package.json/lock file
- * and syncs the results into PlatformVulnerability. This is RiskPatch
+ * and syncs the results into PlatformVulnerability. This is Triarch
  * auditing its own software supply chain, independent of any monitored
  * machine's OS patch status.
  */
@@ -15,13 +17,24 @@ async function runSelfAudit() {
   try {
     // npm audit exits non-zero when vulnerabilities are found — that's
     // expected, not a failure. The JSON is still on stdout either way.
-    output = execSync("npm audit --json", {
+    // Using the async exec() here (not execSync) is deliberate: execSync
+    // blocks Node's entire event loop until the process finishes, which on
+    // a slow or unreliable network connection can freeze every other
+    // request the server is handling — including login — for as long as
+    // npm audit takes to reach the registry and respond. A timeout is also
+    // set so a genuinely stuck npm process can't hang this indefinitely.
+    const result = await execAsync("npm audit --json", {
       cwd: path.join(__dirname),
       encoding: "utf8",
       maxBuffer: 20 * 1024 * 1024,
+      timeout: 60000, // 60 seconds — if npm hasn't responded by then, give up cleanly
     });
+    output = result.stdout;
   } catch (e) {
     output = e.stdout ? e.stdout.toString() : null;
+    if (!output) {
+      console.error("[selfAudit] npm audit failed or timed out:", e.message);
+    }
   }
 
   if (!output) {

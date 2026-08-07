@@ -638,7 +638,7 @@ export default function Layout({ title, rightControls, children }) {
         }}
       >
         <div className="brand">
-          <div className="brandName">RiskPatch</div>
+          <div className="brandName">Triarch</div>
           <div className="brandSub">Security Intelligence</div>
         </div>
     

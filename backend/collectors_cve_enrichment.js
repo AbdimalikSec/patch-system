@@ -141,7 +141,14 @@ async function loadDebianCVEData() {
   const LOCAL_PATH = path.join(__dirname, "debian_cve_db.json");
   console.log("[*] Loading Debian CVE database from local file...");
   try {
-    const raw  = fs.readFileSync(LOCAL_PATH, "utf8");
+    // fs.promises.readFile (not fs.readFileSync) is deliberate here: a
+    // synchronous read of this file was blocking Node's entire event loop
+    // for several seconds at server startup, which was long enough to make
+    // Mongoose's own connection handshake time out and crash the whole
+    // process — a real incident, not a theoretical concern. The async
+    // version yields control back to the event loop while the file is
+    // being read, so nothing else gets starved while this runs.
+    const raw = await fs.promises.readFile(LOCAL_PATH, "utf8");
     debianCVECache = JSON.parse(raw);
     console.log(`[+] Debian CVE database loaded: ${Object.keys(debianCVECache).length} packages indexed`);
     return debianCVECache;
@@ -150,7 +157,6 @@ async function loadDebianCVEData() {
     return null;
   }
 }
-
 async function debianGetCVEsForPackage(packageName, cveDb) {
   if (!cveDb) return [];
   const pkgBase = packageName.split("/")[0].split(":")[0].toLowerCase().trim();
@@ -287,6 +293,7 @@ async function enrichAsset(patch, debianDb) {
   return { matched, stored, exploits };
 }
 
+if (require.main === module) {
 (async () => {
   try {
     console.log("[*] Connecting to MongoDB:", MONGO_URI);
@@ -326,9 +333,12 @@ async function enrichAsset(patch, debianDb) {
 
     await mongoose.disconnect();
     process.exit(0);
-  } catch (e) {
+} catch (e) {
     console.error("[!] Fatal error:", e.message);
     await mongoose.disconnect();
     process.exit(1);
   }
 })();
+}
+
+module.exports = { loadDebianCVEData, debianGetCVEsForPackage };

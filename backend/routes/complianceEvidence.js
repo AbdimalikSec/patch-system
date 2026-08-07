@@ -100,8 +100,8 @@ router.post(
   async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ ok: false, error: "No file uploaded" });
-      const { controlId, controlName, category, notes, supersedes } = req.body;
-      if (!controlId) {
+      const { controlId, controlName, category, notes, supersedes, expiresAt } = req.body; 
+     if (!controlId) {
         fs.unlinkSync(req.file.path);
         return res.status(400).json({ ok: false, error: "controlId is required" });
       }
@@ -116,6 +116,7 @@ router.post(
         mimeType: req.file.mimetype,
         notes: notes || "",
         uploadedBy: req.user.username,
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
       });
 
       // If this upload explicitly supersedes an older document, mark the
@@ -177,6 +178,92 @@ router.delete(
 
       res.json({ ok: true });
     } catch (e) {
+      res.status(500).json({ ok: false, error: "server_error" });
+    }
+  },
+);
+
+
+// GET /api/compliance-evidence/coverage — every live-mapped control alongside
+// whether it currently has at least one active document attached, so a
+// compliance officer can see what's missing, not just what's already done.
+router.get(
+  "/coverage",
+  requireAuth,
+  requireRole("admin", "compliance-officer", "analyst", "auditor"),
+  async (req, res) => {
+    try {
+      const titles = await ComplianceCheck.distinct("title");
+      const controlSet = new Map();
+      for (const title of titles) {
+        const mapped = getISOControl(title);
+        if (mapped && mapped.control) {
+          controlSet.set(mapped.control, { controlId: mapped.control, controlName: mapped.title || "", domain: mapped.domain || "" });
+        }
+      }
+
+      const evidenceControlIds = await ComplianceEvidence.distinct("controlId", { supersededBy: null });
+      const evidenceSet = new Set(evidenceControlIds);
+
+      const coverage = Array.from(controlSet.values()).map((c) => ({
+        ...c,
+        hasEvidence: evidenceSet.has(c.controlId),
+      }));
+
+      coverage.sort((a, b) => a.controlId.localeCompare(b.controlId));
+      res.json({ ok: true, data: coverage });
+    } catch (e) {
+      console.error("[compliance-evidence/coverage]", e.message);
+      res.status(500).json({ ok: false, error: "server_error" });
+    }
+  },
+);
+
+// GET /api/compliance-evidence/export — package every current (non-superseded)
+// document into one zip, with a manifest listing control, category, and date.
+router.get(
+  "/export",
+  requireAuth,
+  requireRole("admin", "compliance-officer", "analyst", "auditor"),
+  async (req, res) => {
+    try {
+      const archiver = require("archiver");
+      const evidence = await ComplianceEvidence.find({ supersededBy: null }).lean();
+
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader("Content-Disposition", `attachment; filename="compliance-evidence-export-${new Date().toISOString().slice(0, 10)}.zip"`);
+
+      const archive = archiver("zip", { zlib: { level: 9 } });
+      archive.on("error", (err) => {
+        console.error("[compliance-evidence/export]", err.message);
+        res.status(500).end();
+      });
+      archive.pipe(res);
+
+      const manifestLines = ["Control ID,Control Name,Category,Original File,Uploaded By,Uploaded At,Expires At"];
+      for (const record of evidence) {
+        const filePath = path.join(STORAGE_DIR, record.storedFileName);
+        if (fs.existsSync(filePath)) {
+          const safeControl = record.controlId.replace(/[^a-z0-9.\-]/gi, "_");
+          archive.file(filePath, { name: `${safeControl}/${record.originalFileName}` });
+        }
+        manifestLines.push(
+          [
+            record.controlId,
+            (record.controlName || "").replace(/,/g, ";"),
+            record.category,
+            record.originalFileName,
+            record.uploadedBy,
+            new Date(record.uploadedAt).toISOString().slice(0, 10),
+            record.expiresAt ? new Date(record.expiresAt).toISOString().slice(0, 10) : "",
+          ].join(","),
+        );
+      }
+      archive.append(manifestLines.join("\n"), { name: "manifest.csv" });
+
+      await archive.finalize();
+    } catch (e) {
+      console.error("[compliance-evidence/export]", e.message);
       res.status(500).json({ ok: false, error: "server_error" });
     }
   },

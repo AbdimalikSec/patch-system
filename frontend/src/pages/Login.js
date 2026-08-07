@@ -98,7 +98,7 @@ export default function Login() {
             🛡
           </div>
           <div style={{ fontSize: 24, fontWeight: 900, letterSpacing: "-0.5px" }}>
-            RiskPatch
+            Triarch
           </div>
           <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 5 }}>
             Intelligent Patch Management &amp; Compliance

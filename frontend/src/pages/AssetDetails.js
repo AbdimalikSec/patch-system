@@ -1496,7 +1496,7 @@ export default function AssetDetails() {
 
               {!vulnLoading && filteredVulns.length > 0 && (
                 <div className="tableWrap">
-                  <table>
+                    <table>
                     <thead>
                       <tr>
                         <th style={{ width: 160 }}>CVE ID</th>
@@ -1505,6 +1505,7 @@ export default function AssetDetails() {
                         <th style={{ width: 90 }}>CVSS</th>
                         <th style={{ width: 110 }}>Severity</th>
                         <th>Condition</th>
+                        <th style={{ width: 130 }}>Source</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1530,10 +1531,34 @@ export default function AssetDetails() {
                               {v.severity || "Unknown"}
                             </span>
                           </td>
-                          <td
+                           <td
                             style={{ fontSize: 12, color: "var(--muted)" }}
                           >
                             {v.condition || "—"}
+                          </td>
+                          <td>
+                            {v.source === "debian-tracker-fallback" ? (
+                              <span
+                                title="Wazuh's vulnerability engine has no coverage for this OS — detected via our own Debian Security Tracker lookup instead"
+                                style={{
+                                  fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 4,
+                                  background: "hsla(280,60%,60%,0.12)", color: "hsl(280,60%,50%)",
+                                  border: "1px solid hsla(280,60%,60%,0.3)",
+                                }}
+                              >
+                                Debian Tracker (fallback)
+                              </span>
+                            ) : (
+                              <span
+                                style={{
+                                  fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 4,
+                                  background: "hsla(210,80%,60%,0.1)", color: "hsl(210,80%,50%)",
+                                  border: "1px solid hsla(210,80%,60%,0.25)",
+                                }}
+                              >
+                                Wazuh
+                              </span>
+                            )}
                           </td>
                         </tr>
                       ))}

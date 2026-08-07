@@ -4,7 +4,7 @@ const User = require("../models/User");
 const UserActivity = require("../models/UserActivity");
 const { requireAuth, requireRole } = require("../middleware/authMiddleware");
 
-// GET /api/platform-compliance — evidence of RiskPatch's OWN security posture
+// GET /api/platform-compliance — evidence of Triarch's OWN security posture
 // as software: RBAC enforcement, activity logging, credential hashing, and
 // its own dependency vulnerability status. Read access matches Compliance
 // view permissions (admin, compliance-officer, analyst, auditor).

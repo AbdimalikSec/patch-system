@@ -54,8 +54,8 @@ export default function PlatformCompliance() {
       }
     >
       <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20, maxWidth: 760 }}>
-        RiskPatch monitors compliance across the fleet it manages. This page turns that same
-        scrutiny on RiskPatch itself — what the platform's own architecture already proves
+        Triarch monitors compliance across the fleet it manages. This page turns that same
+        scrutiny on Triarch itself — what the platform's own architecture already proves
         about access control, logging, credential handling, and its own software supply chain.
       </div>
 

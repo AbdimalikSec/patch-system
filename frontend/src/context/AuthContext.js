@@ -11,19 +11,19 @@ export function AuthProvider({ children }) {
 
   function setToken(token) {
     if (token) {
-      localStorage.setItem("riskpatch_token", token);
+      localStorage.setItem("triarch_token", token);
       axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
     } else {
-      localStorage.removeItem("riskpatch_token");
-      localStorage.removeItem("riskpatch_login_at");
+      localStorage.removeItem("triarch_token");
+      localStorage.removeItem("triarch_login_at");
       delete axios.defaults.headers.common["Authorization"];
     }
   }
 
   // On mount — restore session from localStorage
   useEffect(() => {
-    const token = localStorage.getItem("riskpatch_token");
-    const storedLoginAt = localStorage.getItem("riskpatch_login_at");
+    const token = localStorage.getItem("triarch_token");
+    const storedLoginAt = localStorage.getItem("triarch_login_at");
     if (!token) {
       setLoading(false);
       return;
@@ -43,7 +43,7 @@ export function AuthProvider({ children }) {
     // Record the exact moment this session started
     const now = new Date().toISOString();
     setLoginAt(now);
-    localStorage.setItem("riskpatch_login_at", now);
+    localStorage.setItem("triarch_login_at", now);
     return res.data.user;
   }
 

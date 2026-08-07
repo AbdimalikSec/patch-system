@@ -26,6 +26,11 @@ const ComplianceEvidenceSchema = new mongoose.Schema(
     notes: { type: String, default: "" },
     uploadedBy: { type: String, required: true },
     uploadedAt: { type: Date, default: Date.now },
+    expiresAt: { type: Date, default: null },
+    // Tracks whether an expiring-soon alert has already been sent for the
+    // CURRENT expiresAt value, so the daily check doesn't re-notify every
+    // single day during the 30-day warning window.
+    expiryNotifiedAt: { type: Date, default: null },
     // Superseded documents are kept for history rather than deleted outright
     // when a newer version of the same evidence is uploaded.
     supersededBy: { type: mongoose.Schema.Types.ObjectId, ref: "ComplianceEvidence", default: null },

@@ -6,7 +6,9 @@ const activityLogger = require("./middleware/activityLogger");
 const connectDB = require("./config/db");
 const { requireAuth } = require("./middleware/authMiddleware");
 const { startMaintenanceScheduler } = require("./maintenanceScheduler");
+const { startComplianceEvidenceScheduler } = require("./complianceEvidenceScheduler");
 const { runSelfAudit } = require("./collectors_self_audit");
+const { runDebianTrackerFallback } = require("./collectors_debian_tracker_fallback");
 
 const app = express();
 app.use(cors());
@@ -45,14 +47,26 @@ app.use("/api/user-activity", require("./routes/userActivity"));
 app.use("/api/system-ops", require("./routes/systemOps"));
 const PORT = process.env.PORT || 5000;
 const SELF_AUDIT_INTERVAL_MS = 24 * 60 * 60 * 1000; // once a day — dependency CVEs don't change fast
+const DEBIAN_FALLBACK_INTERVAL_MS = 24 * 60 * 60 * 1000; // once a day — installed packages don't change fast either
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   startMaintenanceScheduler();
-
-  // Run once at startup, then daily thereafter
-  runSelfAudit().catch((e) => console.error("[selfAudit] startup run failed:", e.message));
+  startComplianceEvidenceScheduler();
+  // Delayed by 30 seconds so these don't compete with Mongoose's own
+  // connection handshake right at startup — running them in the same tick
+  // as server boot was causing a real crash loop (see notes below).
+  setTimeout(() => {
+    runSelfAudit().catch((e) => console.error("[selfAudit] startup run failed:", e.message));
+  }, 30000);
   setInterval(() => {
     runSelfAudit().catch((e) => console.error("[selfAudit] scheduled run failed:", e.message));
   }, SELF_AUDIT_INTERVAL_MS);
+
+  setTimeout(() => {
+    runDebianTrackerFallback().catch((e) => console.error("[debianTrackerFallback] startup run failed:", e.message));
+  }, 45000);
+  setInterval(() => {
+    runDebianTrackerFallback().catch((e) => console.error("[debianTrackerFallback] scheduled run failed:", e.message));
+  }, DEBIAN_FALLBACK_INTERVAL_MS);
 });

@@ -17,27 +17,17 @@ const axios = require("axios");
 const mongoose = require("mongoose");
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const INDEXER_URL = process.env.INDEXER_URL || "https://192.168.0.20:9200";
-const INDEXER_USER = process.env.INDEXER_USER || "admin";
-const INDEXER_PASS = process.env.INDEXER_PASS || "Index3rPass+2026";
 const WAZUH_API_URL = process.env.WAZUH_API_URL || "https://192.168.0.20:55000";
 const WAZUH_API_USER = process.env.WAZUH_API_USER || "riskpatch-api";
 const WAZUH_API_PASS = process.env.WAZUH_API_PASS || "passwordsS3*";
 const MONGO_URI =
   process.env.MONGO_URI || "mongodb://127.0.0.1:27017/riskpatch";
-const INDEX = "wazuh-alerts-4.x-*";
 
 // Agent id → hostname mapping — keeps queries fast and avoids duplicate names.
 // Add every agent you have here. id is the Wazuh agent id (string, zero-padded).
 const Agent = require("./models/Agent");
-
-// ── Axios instance (skip TLS verification — lab environment) ──────────────────
-const client = axios.create({
-  baseURL: INDEXER_URL,
-  auth: { username: INDEXER_USER, password: INDEXER_PASS },
-  httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-  timeout: 30000,
-});
+const dataSourceType = process.env.DATA_SOURCE_TYPE || "wazuh";
+const dataSourceAdapter = require(`./adapters/${dataSourceType === "wazuh" ? "WazuhAdapter" : "WazuhAdapter"}`);
 
 // ── Mongoose model (loaded after DB connect) ──────────────────────────────────
 let ComplianceCheck;
@@ -93,82 +83,6 @@ async function autoLinkAgents() {
   }
 }
 
-// ── Pull all SCA checks for one agent via scroll ──────────────────────────────
-async function fetchChecksForAgent(agentId) {
-  const PAGE_SIZE = 500;
-  const body = {
-    size: PAGE_SIZE,
-    _source: ["agent", "data.sca", "@timestamp"],
-    query: {
-      bool: {
-        must: [
-          { match: { "agent.id": agentId } },
-          { term: { "rule.groups": "sca" } },
-          { term: { "data.sca.type": "check" } },
-        ],
-      },
-    },
-    // Return only the most recent result for each checkId by sorting desc.
-    // We will de-duplicate in JS after collecting all pages.
-    sort: [{ "@timestamp": "desc" }],
-  };
-
-  // Use search_after pagination to avoid the 10 000-hit limit.
-  const allDocs = [];
-  let searchAfter = null;
-
-  while (true) {
-    if (searchAfter) body.search_after = searchAfter;
-
-    const res = await client.post(`/${INDEX}/_search`, body);
-    const hits = res.data.hits.hits;
-    if (!hits || hits.length === 0) break;
-
-    allDocs.push(...hits);
-    if (hits.length < PAGE_SIZE) break;
-
-    searchAfter = hits[hits.length - 1].sort;
-  }
-
-  return allDocs;
-}
-
-// ── De-duplicate: keep only the most recent doc per checkId ──────────────────
-function deduplicate(docs) {
-  const map = new Map();
-  for (const doc of docs) {
-    const id = doc._source?.data?.sca?.check?.id;
-    if (!id) continue;
-    if (!map.has(id)) map.set(id, doc); // already sorted desc, first = newest
-  }
-  return Array.from(map.values());
-}
-
-// ── Normalise one OpenSearch document into a DB-ready object ─────────────────
-function normalise(doc, hostname, agentId) {
-  const sca = doc._source.data.sca;
-  const check = sca.check;
-
-  const resultRaw = (check.result || "").toLowerCase();
-  let result = resultRaw;
-  if (resultRaw.includes("fail")) result = "failed";
-  else if (resultRaw.includes("pass")) result = "passed";
-  else if (resultRaw.includes("not")) result = "not applicable";
-
-  return {
-    assetHostname: hostname,
-    agentId,
-    policy: sca.policy || null,
-    checkId: String(check.id || "unknown"),
-    title: check.title || "",
-    result,
-    description: check.description || "",
-    rationale: check.rationale || "",
-    remediation: check.remediation || "",
-    command: Array.isArray(check.command) ? check.command : [],
-    collectedAt: new Date(doc._source["@timestamp"] || Date.now()),
-  };
-}
 
 // ── Upsert one agent's checks into MongoDB ────────────────────────────────────
 async function upsertChecks(hostname, agentId, normalisedChecks) {
@@ -235,29 +149,22 @@ async function upsertChecks(hostname, agentId, normalisedChecks) {
     for (const agent of AGENTS) {
       console.log(`\n[*] Processing agent ${agent.id} (${agent.hostname})...`);
 
-      let docs;
+      let normalised;
       try {
-        docs = await fetchChecksForAgent(agent.id);
+        normalised = await dataSourceAdapter.getComplianceResults(agent.id, agent.hostname);
       } catch (e) {
         console.log(
-          `[!] Failed to fetch from indexer for ${agent.hostname}: ${e.message}`,
+          `[!] Failed to fetch from data source for ${agent.hostname}: ${e.message}`,
         );
         continue;
       }
 
-      if (docs.length === 0) {
-        console.log(`[!] No SCA check documents found for ${agent.hostname}`);
+      if (normalised.length === 0) {
+        console.log(`[!] No compliance check data found for ${agent.hostname}`);
         continue;
       }
 
-      console.log(`    Raw docs from indexer : ${docs.length}`);
-
-      const unique = deduplicate(docs);
-      console.log(`    Unique checks (deduped): ${unique.length}`);
-
-      const normalised = unique.map((d) =>
-        normalise(d, agent.hostname, agent.id),
-      );
+      console.log(`    Checks retrieved (deduped): ${normalised.length}`);
 
       const failed = normalised.filter((c) => c.result === "failed").length;
       const passed = normalised.filter((c) => c.result === "passed").length;

@@ -187,12 +187,12 @@ function buildPDFHtml(exportRows, checksMap, kpis, title) {
   const avgColor = expAvg >= 70 ? "#16a34a" : expAvg >= 40 ? "#d97706" : "#dc2626";
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>${title} — RiskPatch</title>
+<title>${title} — Triarch</title>
 <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#111;padding:40px;max-width:1100px;margin:0 auto;}@media print{body{padding:20px;}.no-print{display:none;}}</style>
 </head><body>
   <div style="display:flex;align-items:flex-start;justify-content:space-between;padding-bottom:24px;border-bottom:2px solid #111;margin-bottom:32px;">
     <div>
-      <div style="font-size:28px;font-weight:900;">🛡 RiskPatch</div>
+      <div style="font-size:28px;font-weight:900;">🛡 Triarch</div>
       <div style="font-size:14px;color:#666;margin-top:4px;">${title}</div>
     </div>
     <div style="text-align:right;">
@@ -217,7 +217,7 @@ function buildPDFHtml(exportRows, checksMap, kpis, title) {
   </div>
   <div style="font-size:18px;font-weight:800;margin-bottom:24px;padding-bottom:12px;border-bottom:1px solid #e5e5e5;">Asset Compliance Details</div>
   ${assetSections}
-  <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e5e5;font-size:11px;color:#999;text-align:center;">RiskPatch — Intelligent Risk-Based Patch Management & Compliance Framework · ${date}</div>
+  <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e5e5;font-size:11px;color:#999;text-align:center;">Triarch — Intelligent Risk-Based Patch Management & Compliance Framework · ${date}</div>
 </body></html>`;
 }
 
@@ -288,12 +288,12 @@ function buildISOPDFHtml(exportRows, checksMap, title) {
   const scoreColor = overallScore >= 70 ? "#16a34a" : overallScore >= 40 ? "#d97706" : "#dc2626";
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>${title} — RiskPatch</title>
+<title>${title} — Triarch</title>
 <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#111;padding:40px;max-width:1100px;margin:0 auto;}@media print{body{padding:20px;}.no-print{display:none;}}</style>
 </head><body>
   <div style="display:flex;align-items:flex-start;justify-content:space-between;padding-bottom:24px;border-bottom:2px solid #111;margin-bottom:32px;">
     <div>
-      <div style="font-size:28px;font-weight:900;">🛡 RiskPatch</div>
+      <div style="font-size:28px;font-weight:900;">🛡 Triarch</div>
       <div style="font-size:14px;color:#666;margin-top:4px;">${title}</div>
     </div>
     <div style="text-align:right;">
@@ -318,7 +318,7 @@ function buildISOPDFHtml(exportRows, checksMap, title) {
   </div>
   <div style="font-size:18px;font-weight:800;margin-bottom:24px;padding-bottom:12px;border-bottom:1px solid #e5e5e5;">ISO 27001 Domain Compliance Details</div>
   ${domainSections.length > 0 ? domainSections : `<div style="padding:40px;text-align:center;color:#999;">No ISO 27001 mapped checks found for the selected scope.</div>`}
-  <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e5e5;font-size:11px;color:#999;text-align:center;">RiskPatch — Intelligent Risk-Based Patch Management & Compliance Framework · ${date}</div>
+  <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e5e5;font-size:11px;color:#999;text-align:center;">Triarch — Intelligent Risk-Based Patch Management & Compliance Framework · ${date}</div>
 </body></html>`;
 }
 

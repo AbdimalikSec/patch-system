@@ -36,6 +36,12 @@ const DEFAULT_GROUPS = [
   },
 ];
 
+const CATEGORY_LABELS = {
+  domain: "Domain-joined",
+  physical: "Physical / standalone",
+  security: "Security testing",
+};
+
 function priorityColor(p) {
   return { Critical: "hsl(350,100%,65%)", High: "hsl(25,100%,60%)", Medium: "hsl(45,100%,50%)", Low: "hsl(130,60%,50%)" }[p] || "var(--muted)";
 }
@@ -67,13 +73,28 @@ function ComplianceBar({ value }) {
   );
 }
 
-function GroupCard({ group, allAssets = [], onDelete, onRemoveMember, onAddMember }) {
+// `assetCategoryMap`: { hostname -> networkCategory }
+// `hostnameOwnerGroup`: { hostname -> groupId of whichever group currently holds it, if any }
+function GroupCard({ group, allAssets = [], assetCategoryMap = {}, hostnameOwnerGroup = {}, onDelete, onRemoveMember, onAddMember }) {
   const [expanded, setExpanded] = useState(true);
   const [addingAsset, setAddingAsset] = useState(false);
   const [selectedAdd, setSelectedAdd] = useState("");
   const s = group.stats || {};
   const pc = priorityColor(s.highestPriority);
-  const available = allAssets.filter(a => !group.members.includes(a));
+
+  // Only offer assets that are: not already in THIS group, not already in
+  // ANY other group (real exclusivity, matching the backend rule exactly),
+  // and — if this group is category-gated — matching that category.
+  const available = allAssets.filter((a) => {
+    if (group.members.includes(a)) return false;
+    const ownerGroupId = hostnameOwnerGroup[a];
+    if (ownerGroupId && ownerGroupId !== group._id) return false;
+    if (group.category && group.category !== "custom") {
+      if (assetCategoryMap[a] !== group.category) return false;
+    }
+    return true;
+  });
+
   return (
     <div style={{
       background: "var(--panel)", borderRadius: 12,
@@ -138,55 +159,62 @@ function GroupCard({ group, allAssets = [], onDelete, onRemoveMember, onAddMembe
             <KpiTile label="Highest Risk" value={s.highestRiskScore ?? "—"} color={priorityColor(s.highestPriority)} />
           </div>
 
-          <ComplianceBar value={s.complianceScore} />
-
-          <div style={{ marginTop: 18 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 }}>Members</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              {group.members.length === 0 && <span style={{ fontSize: 12, color: "var(--muted)" }}>No members yet</span>}
-              {group.members.map(hostname => (
-                <div key={hostname} style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  padding: "5px 12px", borderRadius: 20,
-                  background: "var(--surface)", border: "1px solid var(--line)",
-                }}>
-                  <Link to={`/asset/${encodeURIComponent(hostname)}`} style={{ fontSize: 13, fontWeight: 600, color: "var(--accent)", textDecoration: "none" }}>
-                    {hostname}
-                  </Link>
-                  <button onClick={() => onRemoveMember(group._id, hostname)} style={{
-                    background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 0,
-                  }}>×</button>
-                </div>
-              ))}
-              {available.length > 0 && !addingAsset && (
-                <button onClick={() => setAddingAsset(true)} style={{
-                  padding: "5px 12px", borderRadius: 20, background: "transparent",
-                  border: "1px dashed var(--line)", color: "var(--muted)", cursor: "pointer", fontSize: 12,
-                }}>+ Add asset</button>
-              )}
-              {addingAsset && (
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <select value={selectedAdd} onChange={e => setSelectedAdd(e.target.value)} style={{
-                    padding: "5px 10px", borderRadius: 6, fontSize: 12,
-                    background: "var(--surface)", border: "1px solid var(--line)", color: "var(--text)",
-                  }}>
-                    <option value="">Pick asset...</option>
-                    {available.map(a => <option key={a} value={a}>{a}</option>)}
-                  </select>
-                  <button onClick={() => { if (selectedAdd) { onAddMember(group._id, selectedAdd); setSelectedAdd(""); setAddingAsset(false); } }}
-                    disabled={!selectedAdd} style={{
-                      padding: "5px 12px", borderRadius: 6, fontSize: 12,
-                      background: selectedAdd ? "var(--accent)" : "var(--surface)",
-                      border: "1px solid var(--line)", color: selectedAdd ? "#000" : "var(--muted)",
-                      cursor: selectedAdd ? "pointer" : "default",
-                    }}>Add</button>
-                  <button onClick={() => { setAddingAsset(false); setSelectedAdd(""); }} style={{
-                    padding: "5px 10px", borderRadius: 6, fontSize: 12,
-                    background: "transparent", border: "1px solid var(--line)", color: "var(--muted)", cursor: "pointer",
-                  }}>Cancel</button>
-                </div>
-              )}
+          {s.complianceScore != null && (
+            <div style={{ marginBottom: 16 }}>
+              <ComplianceBar value={s.complianceScore} />
             </div>
+          )}
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+            {group.members.map((hostname) => (
+              <div key={hostname} style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "5px 12px", borderRadius: 20,
+                background: "var(--surface)", border: "1px solid var(--line)",
+              }}>
+                <Link to={`/asset/${encodeURIComponent(hostname)}`} style={{ fontSize: 13, fontWeight: 600, color: "var(--accent)", textDecoration: "none" }}>
+                  {hostname}
+                </Link>
+                <button onClick={() => onRemoveMember(group._id, hostname)} style={{
+                  background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 0,
+                }}>×</button>
+              </div>
+            ))}
+            {available.length > 0 && !addingAsset && (
+              <button onClick={() => setAddingAsset(true)} style={{
+                padding: "5px 12px", borderRadius: 20, background: "transparent",
+                border: "1px dashed var(--line)", color: "var(--muted)", cursor: "pointer", fontSize: 12,
+              }}>+ Add asset</button>
+            )}
+            {available.length === 0 && !addingAsset && (
+              <span style={{ fontSize: 11, color: "var(--muted)", fontStyle: "italic" }}>
+                {group.category && group.category !== "custom"
+                  ? `No eligible ${CATEGORY_LABELS[group.category] || group.category} machines available to add`
+                  : "No eligible machines available to add"}
+              </span>
+            )}
+            {addingAsset && (
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <select value={selectedAdd} onChange={e => setSelectedAdd(e.target.value)} style={{
+                  padding: "5px 10px", borderRadius: 6, fontSize: 12,
+                  background: "var(--surface)", border: "1px solid var(--line)", color: "var(--text)",
+                }}>
+                  <option value="">Pick asset...</option>
+                  {available.map(a => <option key={a} value={a}>{a}</option>)}
+                </select>
+                <button onClick={() => { if (selectedAdd) { onAddMember(group._id, selectedAdd); setSelectedAdd(""); setAddingAsset(false); } }}
+                  disabled={!selectedAdd} style={{
+                    padding: "5px 12px", borderRadius: 6, fontSize: 12,
+                    background: selectedAdd ? "var(--accent)" : "var(--surface)",
+                    border: "1px solid var(--line)", color: selectedAdd ? "#000" : "var(--muted)",
+                    cursor: selectedAdd ? "pointer" : "default",
+                  }}>Add</button>
+                <button onClick={() => { setAddingAsset(false); setSelectedAdd(""); }} style={{
+                  padding: "5px 10px", borderRadius: 6, fontSize: 12,
+                  background: "transparent", border: "1px solid var(--line)", color: "var(--muted)", cursor: "pointer",
+                }}>Cancel</button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -197,6 +225,7 @@ function GroupCard({ group, allAssets = [], onDelete, onRemoveMember, onAddMembe
 export default function AssetGroups() {
   const [groups, setGroups]         = useState([]);
   const [allAssets, setAllAssets] = useState([]);
+  const [assetCategoryMap, setAssetCategoryMap] = useState({});
   const [loading, setLoading]       = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast]           = useState(null);
@@ -208,16 +237,27 @@ export default function AssetGroups() {
     setTimeout(() => setToast(null), 3000);
   }
 
-async function load() {
+  async function load() {
     setLoading(true);
     try {
-      const [groupsRes, assetsRes] = await Promise.all([
+      const [groupsRes, assetsRes, machinesRes] = await Promise.all([
         axios.get(`${API}/api/groups`),
         axios.get(`${API}/api/assets/overview`),
+        axios.get(`${API}/api/machines`).catch(() => ({ data: { data: [] } })),
       ]);
       setGroups(groupsRes.data?.data || []);
       const hostnames = (assetsRes.data?.data || []).map((a) => a.hostname);
       setAllAssets(hostnames);
+
+      // networkCategory lives on the Agent registry (/api/machines), not on
+      // the Assets overview — build a hostname -> category lookup so the
+      // "+ Add asset" dropdown can actually filter by eligibility instead of
+      // just listing everything and letting the backend reject it later.
+      const categoryMap = {};
+      for (const m of machinesRes.data?.data || []) {
+        if (m.hostname) categoryMap[m.hostname] = m.networkCategory || "physical";
+      }
+      setAssetCategoryMap(categoryMap);
     } catch {
       showToast("err", "Failed to load groups");
     } finally {
@@ -248,7 +288,7 @@ async function load() {
     try {
       await axios.post(`${API}/api/groups`, { ...form, members: [] });
       showToast("ok", `Group "${form.name}" created`);
-      setForm({ name: "", description: "", icon: "🗂️", owner: "IT", color: "hsl(210,80%,60%)", category: "custom" }); 
+      setForm({ name: "", description: "", icon: "🗂️", owner: "IT", color: "hsl(210,80%,60%)", category: "custom" });
       setShowCreate(false)
       load();
     } catch (e) {
@@ -275,7 +315,7 @@ async function load() {
       load();
     } catch { showToast("err", "Failed to remove member"); }
   }
- 
+
   async function handleAddMember(groupId, hostname) {
     try {
       await axios.post(`${API}/api/groups/${groupId}/members`, { hostname });
@@ -287,6 +327,15 @@ async function load() {
 
   const totalAssets    = [...new Set(groups.flatMap(g => g.members))].length;
   const criticalGroups = groups.filter(g => g.stats?.highestPriority === "Critical").length;
+
+  // hostname -> which group currently owns it (for real, global exclusivity
+  // in the frontend filter, matching the backend's rule exactly).
+  const hostnameOwnerGroup = {};
+  for (const g of groups) {
+    for (const hostname of g.members) {
+      hostnameOwnerGroup[hostname] = g._id;
+    }
+  }
 
   return (
     <Layout title="Asset Groups">
@@ -353,7 +402,6 @@ async function load() {
           </div>
 
           {/* Row 2: description + owner side by side */}
-          {/* Row 2: description + owner side by side */}
           <div style={{ display: "flex", gap: 12, marginBottom: 12, alignItems: "flex-end" }}>
             <div style={{ flex: 2 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", marginBottom: 5 }}>Description</div>
@@ -383,7 +431,7 @@ async function load() {
               <option value="security">Security testing tools only</option>
             </select>
             <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4, lineHeight: 1.4 }}>
-              A machine can only belong to one category-gated group at a time.
+              A machine can only belong to one group at a time, regardless of category.
             </div>
           </div>
 
@@ -426,6 +474,7 @@ async function load() {
 
       {!loading && groups.map(group => (
         <GroupCard key={group._id} group={group} allAssets={allAssets}
+          assetCategoryMap={assetCategoryMap} hostnameOwnerGroup={hostnameOwnerGroup}
           onDelete={handleDelete} onRemoveMember={handleRemoveMember} onAddMember={handleAddMember} />
       ))}
 
