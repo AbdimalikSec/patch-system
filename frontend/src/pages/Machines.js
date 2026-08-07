@@ -497,13 +497,49 @@ export default function Machines() {
                   <td style={{ padding: "16px 24px", fontWeight: 700, fontSize: 14 }}>
                     {m.hostname}
                   </td>
-                  <td style={{ padding: "16px 24px", fontSize: 13 }}>
+                   <td style={{ padding: "16px 24px", fontSize: 13 }}>
                     {(m.os || "-").toUpperCase()}
+                    {m.osMismatch && (
+                      <div
+                        title={`Registered as ${m.os}, but Wazuh detected: ${m.detectedOs || "unknown"}`}
+                        style={{
+                          marginTop: 4,
+                          fontSize: 9.5,
+                          fontWeight: 700,
+                          padding: "2px 7px",
+                          borderRadius: 4,
+                          display: "inline-block",
+                          background: "hsla(30,90%,45%,0.15)",
+                          border: "1px solid hsl(30,90%,45%)",
+                          color: "hsl(30,90%,45%)",
+                        }}
+                      >
+                        ⚠ OS mismatch
+                      </div>
+                    )}
                   </td>
-                   <td
+                    <td
                     style={{ padding: "16px 24px", fontSize: 13, color: "var(--muted)" }}
                   >
                     {m.ip || "-"}
+                    {m.ipMismatch && (
+                      <div
+                        title={`Registered as ${m.ip}, but last reported from: ${m.detectedIp || "unknown"}`}
+                        style={{
+                          marginTop: 4,
+                          fontSize: 9.5,
+                          fontWeight: 700,
+                          padding: "2px 7px",
+                          borderRadius: 4,
+                          display: "inline-block",
+                          background: "hsla(30,90%,45%,0.15)",
+                          border: "1px solid hsl(30,90%,45%)",
+                          color: "hsl(30,90%,45%)",
+                        }}
+                      >
+                        ⚠ IP mismatch
+                      </div>
+                    )}
                   </td>
                   <td style={{ padding: "16px 24px" }}>
                     <span
@@ -526,7 +562,27 @@ export default function Machines() {
                       {m.networkCategory || "physical"}
                     </span>
                   </td>
-                  <td style={{ padding: "16px 24px", fontSize: 13 }}>{m.role}</td>
+                   <td style={{ padding: "16px 24px", fontSize: 13 }}>
+                    {m.role}
+                    {m.roleMismatch && (
+                      <div
+                        title={`Registered as workstation, but Wazuh detected a server-class OS: ${m.detectedOs || "unknown"}`}
+                        style={{
+                          marginTop: 4,
+                          fontSize: 9.5,
+                          fontWeight: 700,
+                          padding: "2px 7px",
+                          borderRadius: 4,
+                          display: "inline-block",
+                          background: "hsla(30,90%,45%,0.15)",
+                          border: "1px solid hsl(30,90%,45%)",
+                          color: "hsl(30,90%,45%)",
+                        }}
+                      >
+                        ⚠ Role mismatch
+                      </div>
+                    )}
+                  </td>
                   <td style={{ padding: "16px 24px", fontSize: 13 }}>
                     {m.criticality}
                   </td>

@@ -32,8 +32,17 @@ const AgentSchema = new mongoose.Schema(
       type: String,
       enum: ["domain", "physical", "security"],
       default: "physical",
-    },   
-
+    },
+        // Populated by the OS-validation check, comparing what was declared
+    // at registration against what Wazuh actually reports once the agent
+    // connects — turning "we trust the form forever" into "we trust it
+    // initially, then verify and flag if it's wrong."
+    detectedOs: { type: String, default: "" },
+    osMismatch: { type: Boolean, default: false },
+    osValidatedAt: { type: Date, default: null },
+    detectedIp: { type: String, default: "" },
+    ipMismatch: { type: Boolean, default: false },
+    roleMismatch: { type: Boolean, default: false },
    // Enrollment tracking
     enrolled:    { type: Boolean, default: false }, // true once Wazuh agent checks in
     addedVia:    { type: String, default: "manual" }, // "manual" | "dashboard"

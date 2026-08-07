@@ -7,6 +7,7 @@ const connectDB = require("./config/db");
 const { requireAuth } = require("./middleware/authMiddleware");
 const { startMaintenanceScheduler } = require("./maintenanceScheduler");
 const { startComplianceEvidenceScheduler } = require("./complianceEvidenceScheduler");
+const { runOsValidation } = require("./collectors_os_validation");
 const { runSelfAudit } = require("./collectors_self_audit");
 const { runDebianTrackerFallback } = require("./collectors_debian_tracker_fallback");
 
@@ -53,6 +54,12 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   startMaintenanceScheduler();
   startComplianceEvidenceScheduler();
+  setTimeout(() => {
+    runOsValidation().catch((e) => console.error("[osValidation] startup run failed:", e.message));
+  }, 60000); // delayed well clear of startup, same lesson as tonight's other two fixes
+  setInterval(() => {
+    runOsValidation().catch((e) => console.error("[osValidation] scheduled run failed:", e.message));
+  }, 24 * 60 * 60 * 1000);
   // Delayed by 30 seconds so these don't compete with Mongoose's own
   // connection handshake right at startup — running them in the same tick
   // as server boot was causing a real crash loop (see notes below).
