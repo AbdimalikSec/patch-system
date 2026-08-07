@@ -50,7 +50,16 @@ function FleetAnalytics({ rows }) {
       const p = (r?.risk?.priority || "Low").toLowerCase();
       if (risk[p] !== undefined) risk[p]++;
 
-      const osSimple = (r.os || "Unknown").split(' ')[0] || "Unknown";
+      // Bucket by actual OS family, not the literal first word — a detailed
+      // Wazuh-reported string ("Microsoft Windows Server 2025...", "Kali
+      // GNU/Linux Rolling") and a plain registration-dropdown value
+      // ("windows", "linux") for the same family need to land in the same
+      // bucket, not split into four depending on which machines currently
+      // have live Wazuh detail and which don't.
+      const osLower = (r.os || "").toLowerCase();
+      let osSimple = "Unknown";
+      if (osLower.includes("windows")) osSimple = "Windows";
+      else if (osLower.includes("linux") || osLower.includes("kali") || osLower.includes("debian") || osLower.includes("ubuntu")) osSimple = "Linux";
       os[osSimple] = (os[osSimple] || 0) + 1;
     });
     return { risk, os };
