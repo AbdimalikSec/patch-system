@@ -12,6 +12,8 @@ AGENTS=$(mongosh riskpatchdb --quiet --eval '
     .join("\n")
 ')
 
+
+
 if [ -z "$AGENTS" ]; then
   echo "[!] No enrolled agents found in database."
   echo "=== Auto-rescan cycle finished: $(date) ==="

@@ -470,7 +470,7 @@ export default function AssetGroups() {
           <button onClick={handleSeedDefaults} disabled={submitting} style={{
             padding: "10px 24px", borderRadius: 8, fontSize: 13, fontWeight: 700,
             background: "var(--accent)", border: "none", color: "#000", cursor: "pointer",
-          }}>🚀 Create Default Groups</button>
+          }}>Create Default Groups</button>
         </div>
       )}
 

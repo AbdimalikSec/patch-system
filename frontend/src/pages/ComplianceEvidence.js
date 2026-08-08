@@ -94,8 +94,8 @@ function UploadModal({ controls, onClose, onUploaded, presetControlId, presetCon
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 18 }}>
           {supersedesId
-            ? `This will replace "${supersedesFileName}" — the old file stays on record as superseded, not deleted.`
-            : "Attach a document — a signed policy, training record, or plan — to a specific control."}
+            ? `This will replace "${supersedesFileName}" the old file stays on record as superseded, not deleted.`
+            : "Attach a document a signed policy, training record, or plan to a specific control."}
         </div>
 
         <form onSubmit={handleSubmit}>
