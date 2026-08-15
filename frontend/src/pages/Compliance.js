@@ -58,8 +58,6 @@ function AssetCard({ row, checks, loadingChecks, isAuditor }) {
   const status      = checksArr.length === 0 ? "No Data" : failedCount > 0 ? "Non-Compliant" : "Compliant";
   const displayed   = showAll ? failedArr : failedArr.slice(0, 5);
 
-
-
   return (
     <div className="card" style={{ padding: 0, overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "18px 24px", borderBottom: expanded ? "1px solid var(--line)" : "none" }}>
@@ -306,10 +304,10 @@ function buildISOPDFHtml(exportRows, checksMap, title) {
   </div>
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:32px;">
     ${[
-      ["ISO Domains Covered", `${domains.length}`, "#111"],
       ["Overall Score", `${overallScore}%`, scoreColor],
+      ["Mapped Domains", `${domains.length}`, "#111"],
       ["Total Failed", `${totalFailed}`, "#dc2626"],
-      ["Total Mapped Checks", `${totalChecks}`, "#111"],
+      ["Total Checks", `${totalChecks}`, "#111"],
     ].map(([label, val, color]) => `
       <div style="padding:16px 20px;background:#f8f9fa;border-radius:8px;border:1px solid #e5e5e5;">
         <div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">${label}</div>
@@ -318,6 +316,51 @@ function buildISOPDFHtml(exportRows, checksMap, title) {
   </div>
   <div style="font-size:18px;font-weight:800;margin-bottom:24px;padding-bottom:12px;border-bottom:1px solid #e5e5e5;">ISO 27001 Domain Compliance Details</div>
   ${domainSections.length > 0 ? domainSections : `<div style="padding:40px;text-align:center;color:#999;">No ISO 27001 mapped checks found for the selected scope.</div>`}
+  <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e5e5;font-size:11px;color:#999;text-align:center;">Triarch — Intelligent Risk-Based Patch Management & Compliance Framework · ${date}</div>
+</body></html>`;
+}
+
+function buildControlPDFHtml(matchingChecks, controlId, controlTitle) {
+  const date = new Date().toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" });
+  const failed = matchingChecks.filter(c => c.result === "failed");
+  const passed = matchingChecks.filter(c => c.result === "passed");
+
+  const rows = matchingChecks.map(c => `
+    <tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;font-weight:600;">${c.assetHostname}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:11px;color:#666;">Check #${c.checkId}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:11px;font-weight:700;color:${c.result === "failed" ? "#dc2626" : "#16a34a"};text-transform:uppercase;">${c.result}</td>
+    </tr>`).join("");
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Control ${controlId} Evidence — Triarch</title>
+<style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#111;padding:40px;max-width:1100px;margin:0 auto;}@media print{body{padding:20px;}.no-print{display:none;}}</style>
+</head><body>
+  <div style="margin-bottom:24px;">
+    <div style="font-size:22px;font-weight:900;">🛡 Triarch — ISO 27001:2022 Control ${controlId}</div>
+    <div style="font-size:14px;color:#666;margin-top:4px;">${controlTitle || ""}</div>
+    <div style="font-size:12px;color:#999;margin-top:8px;">Fleet-wide scan evidence · Generated ${date}</div>
+  </div>
+  <div class="no-print" style="margin-bottom:24px;">
+    <button onclick="window.print()" style="padding:10px 24px;background:#111;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">🖨 Print / Save as PDF</button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:32px;">
+    <div style="padding:16px 20px;background:#f8f9fa;border-radius:8px;border:1px solid #e5e5e5;">
+      <div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;">Passing</div>
+      <div style="font-size:28px;font-weight:900;color:#16a34a;">${passed.length} / ${matchingChecks.length}</div>
+    </div>
+    <div style="padding:16px 20px;background:#f8f9fa;border-radius:8px;border:1px solid #e5e5e5;">
+      <div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;">Failing</div>
+      <div style="font-size:28px;font-weight:900;color:#dc2626;">${failed.length} / ${matchingChecks.length}</div>
+    </div>
+  </div>
+  <table style="width:100%;border-collapse:collapse;">
+    <thead><tr style="background:#f8f9fa;">
+      <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;color:#666;">Asset</th>
+      <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;color:#666;">Check</th>
+      <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;color:#666;">Result</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
   <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e5e5;font-size:11px;color:#999;text-align:center;">Triarch — Intelligent Risk-Based Patch Management & Compliance Framework · ${date}</div>
 </body></html>`;
 }
@@ -373,8 +416,24 @@ function DomainCard({ domain, checks, isAuditor }) {
           borderLeft: `3px solid ${showResult === "failed" ? "hsl(350,100%,65%)" : "hsl(130,60%,50%)"}`,
           display: "flex", gap: 12, alignItems: "flex-start"
         }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", minWidth: 60, marginTop: 1 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", minWidth: 60, marginTop: 1, display: "flex", alignItems: "center", gap: 6 }}>
             {c.iso27001.control}
+            <button
+              title={`Export fleet-wide evidence for control ${c.iso27001.control}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                const matching = checks.filter(ch => ch.iso27001.control === c.iso27001.control);
+                const win = window.open("", "_blank");
+                win.document.write(buildControlPDFHtml(matching, c.iso27001.control, c.title));
+                win.document.close();
+              }}
+              style={{
+                fontSize: 9, padding: "1px 5px", borderRadius: 3, cursor: "pointer",
+                background: "var(--surface)", border: "1px solid var(--line)", color: "var(--muted)",
+              }}
+            >
+              ⬇
+            </button>
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 2 }}>{c.title}</div>

@@ -578,7 +578,10 @@ export default function Backlog() {
         const nxt = new Date(collectedAt).getTime();
         if (nxt > cur) g.latestCollectedAt = collectedAt;
       }
-      if (missingItem) g.missingItems.add(missingItem);
+       if (missingItem) {
+        g.missingItems.add(missingItem);
+        if (r.missingTitle) g.titleByKB = { ...(g.titleByKB || {}), [missingItem]: r.missingTitle };
+      }
       if (r.activeCommand) {
         const pkgName = missingItem.split("/")[0].trim();
         g.activeCommands[pkgName] = r.activeCommand;
@@ -907,17 +910,31 @@ export default function Backlog() {
                                     gap: 8,
                                   }}
                                 >
-                                  <div
-                                    style={{
-                                      fontSize: 12.5,
-                                      fontWeight: 500,
-                                      overflow: "hidden",
-                                      textOverflow: "ellipsis",
-                                      whiteSpace: "nowrap",
-                                      flex: 1,
-                                    }}
-                                  >
-                                    {item}
+                                 <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div
+                                      style={{
+                                        fontSize: 12.5,
+                                        fontWeight: 500,
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      {item}
+                                    </div>
+                                    {g.titleByKB?.[item] && (
+                                      <div
+                                        style={{
+                                          fontSize: 11,
+                                          color: "var(--muted)",
+                                          overflow: "hidden",
+                                          textOverflow: "ellipsis",
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
+                                        {g.titleByKB[item]}
+                                      </div>
+                                    )}
                                   </div>
                                   <PatchNowButton
                                     hostname={g.hostname}

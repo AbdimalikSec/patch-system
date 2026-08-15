@@ -33,11 +33,20 @@ router.get("/patches/backlog", requireAuth, async (req, res) => {
 
       const missing = Array.isArray(p.missing) ? p.missing : [];
 
+      // Real update titles arrive from the collector already (raw.missingDetails),
+      // but were never surfaced — build a KB -> title lookup, purely additive,
+      // so the identifier everything else keys off (missingItem) never changes shape.
+      const titleByKB = {};
+      for (const d of (p.raw?.missingDetails || [])) {
+        if (d.kb) titleByKB[d.kb] = d.title;
+      }
+
       for (const item of missing) {
         out.push({
           hostname: a.hostname,
           os: p.os,
           missingItem: item,
+          missingTitle: titleByKB[item] || null,
           collectedAt: p.collectedAt,
           missingCount: p.missingCount ?? missing.length,
           pendingRestart: p.pendingRestart || [],

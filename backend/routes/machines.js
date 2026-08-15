@@ -13,7 +13,7 @@ const { SUPPORTED_OS } = require("../config/osTypes");
 // ── GET /api/machines — list all machines (admin) ─────────────────────────────
 router.get("/", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const agents = await Agent.find({}).sort({ createdAt: -1 }).lean();
+    const agents = await Agent.find({ archived: { $ne: true } }).sort({ createdAt: -1 }).lean();
     const safe = agents.map(({ password, ...rest }) => ({
       ...rest,
       hasPassword: !!password,
@@ -53,9 +53,24 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
       return res.status(400).json({ ok: false, error: "networkCategory must be domain, physical, or security" });
 
 
-    const existing = await Agent.findOne({ hostname });
-    if (existing)
+       const existing = await Agent.findOne({ hostname });
+    if (existing && !existing.archived)
       return res.status(409).json({ ok: false, error: `Machine "${hostname}" already exists` });
+
+    if (existing && existing.archived) {
+      // Reviving a previously-deleted machine, rather than blocking
+      // re-registration or creating a second, duplicate record.
+      const revived = await Agent.findByIdAndUpdate(
+        existing._id,
+        {
+          os, ip, deployMethod, username, password, sshKeyPath, sshPort,
+          criticality, role, exposureLevel, networkCategory,
+          archived: false, archivedAt: null, enrolled: false, wazuhId: "",
+        },
+        { new: true },
+      );
+      return res.json({ ok: true, data: revived, revived: true });
+    }
 
       const agentDoc = {
       hostname,
@@ -138,8 +153,14 @@ router.delete("/:hostname", requireAuth, requireAdmin, async (req, res) => {
       }
     }
 
-    // 2. Delete all local database records for this machine
-    summary.agentRemoved = (await Agent.deleteOne({ hostname })).deletedCount;
+      // 2. Archive the Agent record (not deleted) so it can be found and
+    // revived later if this same machine is re-registered or its Wazuh
+    // agent reconnects. Current-state records (Asset/Patch/Compliance) are
+    // cleared since they'd just be stale snapshots; historical records
+    // (Tickets, RiskSnapshots, ComplianceHistory) are deliberately left
+    // untouched.
+    await Agent.updateOne({ hostname }, { archived: true, archivedAt: new Date(), enrolled: false, wazuhId: "" });
+    summary.agentArchived = true;
     summary.assetMetaRemoved = (await AssetMeta.deleteMany({ hostname })).deletedCount;
     summary.assetRemoved = (await Asset.deleteMany({ hostname })).deletedCount;
     summary.patchesRemoved = (await Patch.deleteMany({ assetHostname: hostname })).deletedCount;

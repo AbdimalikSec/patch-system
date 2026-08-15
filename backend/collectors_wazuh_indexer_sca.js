@@ -32,7 +32,7 @@ const dataSourceAdapter = require(`./adapters/${dataSourceType === "wazuh" ? "Wa
 // ── Mongoose model (loaded after DB connect) ──────────────────────────────────
 let ComplianceCheck;
 let ComplianceHistory;
-
+const { createNotification } = require("./utils/notify");
 // ── Auto-link DB machines to their Wazuh agent ID by hostname ─────────────────
 async function autoLinkAgents() {
   try {
@@ -59,20 +59,33 @@ async function autoLinkAgents() {
     const wazuhAgents = agentsRes.data?.data?.affected_items || [];
 
     // Match each DB machine to its Wazuh agent by hostname (case-insensitive)
+     // Match every DB machine to its Wazuh agent by hostname (case-insensitive),
+    // including archived ones -- an archived machine whose Wazuh agent is
+    // confirmed genuinely Active again is a legitimate, trusted signal to
+    // bring it back, unlike the plain, unauthenticated collector POST.
+     // Match every DB machine to its Wazuh agent by hostname (case-insensitive),
+    // including archived ones -- an archived machine whose Wazuh agent is
+    // confirmed genuinely Active again is a legitimate, trusted signal to
+    // bring it back, unlike the plain, unauthenticated collector POST.
     const dbMachines = await Agent.find({}).lean();
     let linked = 0;
     for (const m of dbMachines) {
       const match = wazuhAgents.find(
         (wa) => (wa.name || "").toLowerCase() === m.hostname.toLowerCase()
       );
-      if (match && match.id !== "000") {
-        // Update if wazuhId is missing/wrong or not yet enrolled
-        if (m.wazuhId !== match.id || !m.enrolled) {
+      if (match && match.id !== "000" && match.status === "active") {
+        const wasArchived = m.archived;
+        // Update if wazuhId is missing/wrong, not yet enrolled, or archived
+        if (m.wazuhId !== match.id || !m.enrolled || m.archived) {
           await Agent.updateOne(
             { _id: m._id },
-            { wazuhId: match.id, enrolled: true }
+            { wazuhId: match.id, enrolled: true, archived: false, archivedAt: null }
           );
-          console.log(`[+] Auto-linked ${m.hostname} → Wazuh ID ${match.id} (enrolled)`);
+          console.log(
+            wasArchived
+              ? `[+] Revived ${m.hostname} -- Wazuh confirms it is active again -> new Wazuh ID ${match.id}`
+              : `[+] Auto-linked ${m.hostname} -> Wazuh ID ${match.id} (enrolled)`
+          );
           linked++;
         }
       }
@@ -110,7 +123,7 @@ async function upsertChecks(hostname, agentId, normalisedChecks) {
     // Record a permanent history entry on every GENUINE transition — this is
     // independent of whether a ticket exists for this check, so compliance
     // fixes/regressions are always tracked.
-    if (isTransition) {
+     if (isTransition) {
       try {
         await ComplianceHistory.create({
           assetHostname: c.assetHostname,
@@ -121,6 +134,28 @@ async function upsertChecks(hostname, agentId, normalisedChecks) {
           toResult: c.result,
           changedAt: new Date(),
         });
+
+        // Real fix or real regression -- either way, someone should know
+        // without having to notice it themselves on the dashboard.
+        if (existing.result === "failed" && c.result === "passed") {
+          createNotification({
+            type: "compliance_fixed",
+            severity: "info",
+            title: "Compliance check fixed",
+            message: `${c.assetHostname}: "${c.title}" now passes.`,
+            targetRoles: ["admin", "compliance-officer"],
+            relatedHostname: c.assetHostname,
+          });
+        } else if (existing.result === "passed" && c.result === "failed") {
+          createNotification({
+            type: "compliance_new_failure",
+            severity: "warning",
+            title: "New compliance failure detected",
+            message: `${c.assetHostname}: "${c.title}" is now failing.`,
+            targetRoles: ["admin", "compliance-officer"],
+            relatedHostname: c.assetHostname,
+          });
+        }
       } catch (e) {
         console.log(`[!] Failed to write compliance history for ${c.assetHostname}/${c.checkId}: ${e.message}`);
       }

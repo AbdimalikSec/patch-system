@@ -72,20 +72,41 @@ router.get("/commands/status/:commandId", requireAuth, requireRole("admin", "pat
   }
 });
 
-// Frontend fetches full patch history — GET /api/agent/history
 router.get("/history", requireAuth, requireRole("admin", "compliance-officer", "patch-operator", "analyst"), async (req, res) => {
   try {
     const { hostname, status, limit } = req.query;
     const filter = {};
     if (hostname) filter.hostname = { $regex: new RegExp(`^${hostname}$`, "i") };
     if (status) filter.status = status;
-
     const commands = await AgentCommand.find(filter)
       .sort({ createdAt: -1 })
       .limit(parseInt(limit) || 200)
       .lean();
 
-    res.json({ ok: true, count: commands.length, data: commands });
+    // Attach the real update title next to each bare KB number, purely for
+    // display. Read-only lookup against each host's latest Patch record --
+    // nothing about AgentCommand or Patch itself changes shape, so nothing
+    // else that depends on either model is affected.
+    const hostnames = [...new Set(commands.map((c) => c.hostname))];
+    const latestPatches = await Patch.find({ assetHostname: { $in: hostnames } })
+      .sort({ collectedAt: -1 })
+      .lean();
+    const titleByHostAndKB = {};
+    for (const p of latestPatches) {
+      if (titleByHostAndKB[p.assetHostname]) continue; // keep only the most recent per host
+      titleByHostAndKB[p.assetHostname] = {};
+      const details = p.raw?.missingDetails || [];
+      for (const d of details) {
+        if (d.kb) titleByHostAndKB[p.assetHostname][d.kb] = d.title;
+      }
+    }
+
+    const enriched = commands.map((c) => ({
+      ...c,
+      kbTitle: titleByHostAndKB[c.hostname]?.[c.kb] || null,
+    }));
+
+    res.json({ ok: true, count: enriched.length, data: enriched });
   } catch (e) {
     res.status(500).json({ ok: false, error: "server_error" });
   }

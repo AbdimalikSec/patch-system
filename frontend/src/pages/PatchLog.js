@@ -206,7 +206,12 @@ export default function PatchLog() {
                       <td style={{ padding: "14px 24px", fontWeight: 700, fontSize: 13 }}>
                         {l.hostname}
                       </td>
-                      <td style={{ padding: "14px 24px", fontSize: 13 }}>{l.kb}</td>
+                      <td style={{ padding: "14px 24px", fontSize: 13 }}>
+                        {l.kb}
+                        {l.kbTitle && (
+                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{l.kbTitle}</div>
+                        )}
+                      </td>
                       <td style={{ padding: "14px 24px", fontSize: 13, textTransform: "capitalize" }}>
                         {l.type || "patch"}
                       </td>

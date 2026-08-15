@@ -54,7 +54,14 @@ const AgentSchema = new mongoose.Schema(
     // human still works normally regardless of this flag — only automatic
     // paths respect it.
     excludeFromAutoDeploy: { type: Boolean, default: false }, 
-  },
+    // Set only by an explicit admin Delete action — never inferred from a
+    // machine being temporarily offline/disconnected in Wazuh. An archived
+    // machine is excluded from active views and can no longer post new
+    // patch/compliance data, but its historical records (tickets, risk
+    // snapshots, compliance history) are preserved, not destroyed.
+    archived: { type: Boolean, default: false },
+    archivedAt: { type: Date, default: null }, 
+},
   { timestamps: true }
 );
 
