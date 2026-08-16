@@ -2,6 +2,7 @@ const router = require("express").Router();
 const Asset = require("../models/Asset");
 const Patch = require("../models/Patch");
 const Agent = require("../models/Agent");
+const { createNotification } = require("../utils/notify");
 
 // POST /api/ingest/asset
 router.post("/asset", async (req, res) => {
@@ -51,7 +52,15 @@ router.post("/patch", async (req, res) => {
     if (!agentExists) {
       return res.status(403).json({ ok: false, error: "Machine is not registered or has been removed" });
     }
-    const incomingMissing = missing || [];
+   const incomingMissing = missing || [];
+
+    // Fetch the previous count BEFORE the upsert overwrites it, so a genuine
+    // drop (a real patch confirmed installed by the next scan) can be
+    // detected and surfaced -- rather than requiring someone to notice it
+    // by manually refreshing the dashboard.
+    const previous = await Patch.findOne({ assetHostname }).lean();
+    const previousCount = previous?.missingCount ?? null;
+
     const doc = await Patch.findOneAndUpdate(
       { assetHostname },
       {
@@ -67,6 +76,17 @@ router.post("/patch", async (req, res) => {
       },
       { upsert: true, new: true },
     );
+    if (previousCount !== null && incomingMissing.length < previousCount) {
+      createNotification({
+        type: "patch_deployment_confirmed",
+        severity: "info",
+        title: "Patch confirmed installed",
+        message: `${assetHostname}: missing updates dropped from ${previousCount} to ${incomingMissing.length} on the latest scan.`,
+        targetRoles: ["admin", "patch-operator"],
+        relatedHostname: assetHostname,
+      });
+    }
+
     res.json({ ok: true, patchId: doc._id });
   } catch (e) {
     console.error("Patch ingest error:", e);
