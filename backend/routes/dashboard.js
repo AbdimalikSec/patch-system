@@ -70,7 +70,12 @@ router.get("/patches/backlog", requireAuth, async (req, res) => {
       $or: [
         { status: "pending" },
         { status: "running" },
-        { status: "success" },
+        // A months-old success was being matched purely by package name with
+        // no recency check at all -- meaning a genuinely NEW missing version
+        // of the same package (e.g. a rolling-release update) inherited a
+        // stale "Done" state from an old, unrelated install. Bounded to the
+        // same 10-minute window "failed" already correctly used.
+        { status: "success", completedAt: { $gte: recentCutoff } },
         { status: "failed", completedAt: { $gte: recentCutoff } },
       ],
     }).lean();
