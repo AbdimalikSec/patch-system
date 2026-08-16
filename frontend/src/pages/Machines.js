@@ -611,15 +611,15 @@ export default function Machines() {
                       <div
                         style={{ display: "flex", gap: 8, justifyContent: "center" }}
                       >
-                        <button
+                         <button
                           className="btn"
                           onClick={() => handleDelete(m.hostname)}
                           style={{
                             fontSize: 11,
                             padding: "5px 12px",
-                            background: "hsl(350,100%,65%)",
-                            color: "#fff",
-                            border: "none",
+                            background: "var(--surface)",
+                            color: "var(--text)",
+                            border: "1px solid var(--line)",
                           }}
                         >
                           Confirm
@@ -643,14 +643,14 @@ export default function Machines() {
                         >
                           Script
                         </button>
-                        <button
+                         <button
                           className="btn"
                           onClick={() => setDeleteHost(m.hostname)}
                           style={{
                             fontSize: 11,
                             padding: "5px 12px",
-                            color: "hsl(350,100%,65%)",
-                            borderColor: "hsla(350,100%,65%,0.3)",
+                            color: "var(--text)",
+                            borderColor: "var(--line)",
                           }}
                         >
                           Delete
