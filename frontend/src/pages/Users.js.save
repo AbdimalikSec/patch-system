@@ -579,7 +579,7 @@ export default function Users() {
                             justifyContent: "center",
                           }}
                         >
-                          <button
+                           <button
                             className="btn"
                             onClick={() => handleDelete(u._id, u.username)}
                             style={{
@@ -615,14 +615,14 @@ export default function Users() {
                           >
                             Edit
                           </button>
-                           <button
+                          <button
                             className="btn"
                             onClick={() => setDeleteId(u._id)}
                             style={{
                               fontSize: 11,
                               padding: "5px 12px",
-                              color: "var(--text)",
-                              borderColor: "var(--line)",
+                              color: "hsl(350,100%,65%)",
+                              borderColor: "hsla(350,100%,65%,0.3)",
                             }}
                           >
                             Delete

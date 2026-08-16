@@ -185,7 +185,7 @@ function buildPDFHtml(exportRows, checksMap, kpis, title) {
   const avgColor = expAvg >= 70 ? "#16a34a" : expAvg >= 40 ? "#d97706" : "#dc2626";
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>${title} — Triarch</title>
+<title>${title} - Triarch</title>
 <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#111;padding:40px;max-width:1100px;margin:0 auto;}@media print{body{padding:20px;}.no-print{display:none;}}</style>
 </head><body>
   <div style="display:flex;align-items:flex-start;justify-content:space-between;padding-bottom:24px;border-bottom:2px solid #111;margin-bottom:32px;">
@@ -286,7 +286,7 @@ function buildISOPDFHtml(exportRows, checksMap, title) {
   const scoreColor = overallScore >= 70 ? "#16a34a" : overallScore >= 40 ? "#d97706" : "#dc2626";
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>${title} — Triarch</title>
+<title>${title} - Triarch</title>
 <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#111;padding:40px;max-width:1100px;margin:0 auto;}@media print{body{padding:20px;}.no-print{display:none;}}</style>
 </head><body>
   <div style="display:flex;align-items:flex-start;justify-content:space-between;padding-bottom:24px;border-bottom:2px solid #111;margin-bottom:32px;">
@@ -332,7 +332,7 @@ function buildControlPDFHtml(matchingChecks, controlId, controlTitle) {
       <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:11px;font-weight:700;color:${c.result === "failed" ? "#dc2626" : "#16a34a"};text-transform:uppercase;">${c.result}</td>
     </tr>`).join("");
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Control ${controlId} Evidence — Triarch</title>
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Control ${controlId} Evidence - Triarch</title>
 <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#111;padding:40px;max-width:1100px;margin:0 auto;}@media print{body{padding:20px;}.no-print{display:none;}}</style>
 </head><body>
   <div style="margin-bottom:24px;">
