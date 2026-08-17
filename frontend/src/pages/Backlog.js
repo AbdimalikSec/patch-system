@@ -195,7 +195,7 @@ function PatchAllButton({ hostname, missingCount, canPatch, onDone }) {
 }
 
 // ── Patch Now Button (single item) ──────────────────────────────────────────────
-function PatchNowButton({ hostname, pkg, os, role, onPatched, alreadyQueued, activeCommand, canPatch }) {
+function PatchNowButton({ hostname, pkg, os, role, onPatched, alreadyQueued, activeCommand, canPatch, isHostRestarting, onRestartTriggered }) {
   const [state, setState] = useState(() => {
     if (activeCommand?.status === "pending") return "queued";
     if (activeCommand?.status === "running") return "patching";
@@ -286,22 +286,28 @@ function PatchNowButton({ hostname, pkg, os, role, onPatched, alreadyQueued, act
       </div>
     );
 
-  if (state === "done")
+if (state === "done")
     return (
       <div>
         <span style={{ fontSize: 11, color: "hsl(30,90%,45%)", fontWeight: 600 }}>
-          {isWindows ? "Pending restart" : "Done"}
+          {isWindows ? (isHostRestarting ? "Restarting…" : "Pending restart") : "Done"}
         </span>
         {output && <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2, maxWidth: 220 }}>{output.slice(0, 100)}</div>}
-        {isWindows && canPatch && (role || "").toLowerCase() !== "domain controller" && (
+        {isWindows && isHostRestarting && (
+          <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>
+            Restart already scheduled for this machine
+          </div>
+        )}
+        {isWindows && !isHostRestarting && canPatch && (role || "").toLowerCase() !== "domain controller" && (
           <button
             onClick={async () => {
-              if (!window.confirm(`Restart ${hostname} now?\n\nThe machine restarts in 60 seconds. Unsaved work will be lost.`)) return;
+              if (!window.confirm(`Restart ${hostname} now?\n\nThe machine restarts in 60 seconds. Unsaved work will be lost.\n\nAny other patched updates awaiting restart on this machine will be applied at the same time.`)) return;
               try {
                 const res = await axios.post(`${API}/api/deploy/restart`, { hostname });
                 if (res.data?.ok) {
                   setState("restarting");
                   setOutput("Restart scheduled — 60 seconds");
+                  onRestartTriggered();
                 } else {
                   alert(res.data?.error || "Restart failed");
                 }
@@ -509,7 +515,12 @@ export default function Backlog() {
   const [riskFilter, setRiskFilter] = useState("All");
   const [slaFilter, setSlaFilter] = useState("All");
   const [expanded, setExpanded] = useState(() => new Set());
-
+  // Shared across every KB row for the same machine -- restart is a
+  // machine-level action, not a per-package one, so clicking "Restart now"
+  // on any single KB must immediately be reflected by every other pending
+  // KB on that same host, not leave them each showing their own stale,
+  // uncoordinated "Restart now" button.
+  const [restartingHosts, setRestartingHosts] = useState(() => new Set());
   async function load() {
     try {
       setErr("");
@@ -958,6 +969,10 @@ useEffect(() => {
                                     alreadyQueued={(g.pendingRestart || []).includes(item)}
                                     activeCommand={g.activeCommands[item.split("/")[0].trim()]}
                                     canPatch={canPatch}
+                                    isHostRestarting={restartingHosts.has(g.hostname)}
+                                    onRestartTriggered={() =>
+                                      setRestartingHosts((prev) => new Set(prev).add(g.hostname))
+                                    }
                                   />
                                 </div>
                               ))}
