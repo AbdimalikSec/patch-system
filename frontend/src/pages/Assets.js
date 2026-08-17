@@ -158,7 +158,10 @@ export default function Assets() {
         const res = await axios.get(`${API}/api/agents`);
         const map = {};
         for (const a of (res.data?.data || [])) {
-          map[a.hostname] = a.status;
+          // Lowercased key -- Agent and Asset records don't always agree on
+          // hostname casing (e.g. "PATCH-SRV" vs "patch-srv"), which was
+          // silently breaking this exact lookup for one specific machine.
+          map[(a.hostname || "").toLowerCase()] = a.status;
         }
         setStatuses(map);
       } catch (e) {
@@ -205,7 +208,7 @@ export default function Assets() {
           </thead>
           <tbody>
             {filtered.map((r) => {
-              const agentStatus = agentStatuses[r.hostname] ?? null;
+             const agentStatus = agentStatuses[(r.hostname || "").toLowerCase()] ?? null; 
               const priority = r?.risk?.priority || "Low";
               const score = r?.risk?.score ?? 0;
 

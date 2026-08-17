@@ -405,15 +405,27 @@ export default function AssetDetails() {
   ]);
 
 
-  const headerRight = (
-    <span className={statusBadge(agentStatus)}>
-      <span className="badgeDot"></span>
-      {agentStatus === "active"
-        ? "Online"
-        : agentStatus
-          ? "Offline"
-          : "Unknown"}
-    </span>
+const headerRight = (
+    <>
+      <button
+        onClick={() => navigate("/assets")}
+        style={{
+          fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 6,
+          background: "var(--surface)", border: "1px solid var(--line)", color: "var(--text)",
+          cursor: "pointer", marginRight: 10,
+        }}
+      >
+        ← Back to Assets
+      </button>
+      <span className={statusBadge(agentStatus)}>
+        <span className="badgeDot"></span>
+        {agentStatus === "active"
+          ? "Online"
+          : agentStatus
+            ? "Offline"
+            : "Unknown"}
+      </span>
+    </>
   );
 
   return (

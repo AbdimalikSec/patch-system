@@ -7,6 +7,7 @@ const connectDB = require("./config/db");
 const { requireAuth } = require("./middleware/authMiddleware");
 const { startMaintenanceScheduler } = require("./maintenanceScheduler");
 const { startComplianceEvidenceScheduler } = require("./complianceEvidenceScheduler");
+const { startCommandTimeoutScheduler } = require("./commandTimeoutScheduler");
 const { runOsValidation } = require("./collectors_os_validation");
 const { runSelfAudit } = require("./collectors_self_audit");
 const { runDebianTrackerFallback } = require("./collectors_debian_tracker_fallback");
@@ -54,6 +55,7 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   startMaintenanceScheduler();
   startComplianceEvidenceScheduler();
+  startCommandTimeoutScheduler();
   setTimeout(() => {
     runOsValidation().catch((e) => console.error("[osValidation] startup run failed:", e.message));
   }, 60000); // delayed well clear of startup, same lesson as tonight's other two fixes
