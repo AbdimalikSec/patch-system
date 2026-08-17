@@ -27,14 +27,14 @@ function expiryStatus(expiresAt) {
   const daysLeft = Math.ceil((exp - now) / (1000 * 60 * 60 * 24));
   if (daysLeft < 0) return { label: `Expired ${Math.abs(daysLeft)}d ago`, color: "hsl(350,75%,50%)" };
   if (daysLeft <= 30) return { label: `Expires in ${daysLeft}d`, color: "hsl(30,90%,45%)" };
-  return null; // not close enough to warrant a badge
+  return null;
 }
 
-function UploadModal({ controls, onClose, onUploaded, presetControlId, presetControlName, presetCategory, supersedesId, supersedesFileName }) {
-  const [mode, setMode] = useState(presetControlId ? "custom" : "existing");
-  const [controlId, setControlId] = useState(controls[0]?.controlId || "");
-  const [customControlId, setCustomControlId] = useState(presetControlId || "");
-  const [customControlName, setCustomControlName] = useState(presetControlName || "");
+function UploadModal({ frameworks, onClose, onUploaded, presetFramework, presetControlId, presetControlName, presetCategory, supersedesId, supersedesFileName }) {
+  const [framework, setFramework] = useState(presetFramework || frameworks[0]?.id || "iso27001");
+  const [controls, setControls] = useState([]);
+  const [loadingControls, setLoadingControls] = useState(true);
+  const [controlId, setControlId] = useState(presetControlId || "");
   const [category, setCategory] = useState(presetCategory || "policy");
   const [notes, setNotes] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
@@ -42,15 +42,43 @@ function UploadModal({ controls, onClose, onUploaded, presetControlId, presetCon
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState("");
 
+  // Every control offered here comes directly from the real, curated
+  // framework file on the server -- scanned or not, nothing is ever
+  // free-typed. Switching framework re-loads its real control list.
+  useEffect(() => {
+    let cancelled = false;
+    async function loadControls() {
+      setLoadingControls(true);
+      try {
+        const res = await axios.get(`${API}/api/compliance-evidence/controls`, { params: { framework } });
+        if (!cancelled) {
+          const list = res.data?.data || [];
+          setControls(list);
+          if (!presetControlId && list.length > 0 && !list.some((c) => c.controlId === controlId)) {
+            setControlId(list[0].controlId);
+          }
+        }
+      } catch (e) {
+        if (!cancelled) setControls([]);
+      } finally {
+        if (!cancelled) setLoadingControls(false);
+      }
+    }
+    loadControls();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [framework]);
+
+  const selectedControl = controls.find((c) => c.controlId === controlId);
+
   async function handleSubmit(e) {
     e.preventDefault();
     if (!file) {
       setErr("Select a file first");
       return;
     }
-    const finalControlId = mode === "custom" ? customControlId.trim() : controlId;
-    if (!finalControlId) {
-      setErr("A control ID is required");
+    if (!controlId) {
+      setErr("A control is required");
       return;
     }
 
@@ -59,11 +87,9 @@ function UploadModal({ controls, onClose, onUploaded, presetControlId, presetCon
     try {
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("controlId", finalControlId);
-      formData.append(
-        "controlName",
-        mode === "custom" ? customControlName : controls.find((c) => c.controlId === controlId)?.title || "",
-      );
+      formData.append("framework", framework);
+      formData.append("controlId", controlId);
+      formData.append("controlName", selectedControl?.controlName || presetControlName || "");
       formData.append("category", category);
       formData.append("notes", notes);
       if (expiresAt) formData.append("expiresAt", expiresAt);
@@ -88,55 +114,59 @@ function UploadModal({ controls, onClose, onUploaded, presetControlId, presetCon
       }}
       onClick={onClose}
     >
-      <div className="card" style={{ width: 480, maxWidth: "90vw", padding: 24 }} onClick={(e) => e.stopPropagation()}>
+      <div className="card" style={{ width: 500, maxWidth: "90vw", padding: 24 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>
           {supersedesId ? "Upload New Version" : "Upload Compliance Evidence"}
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 18 }}>
           {supersedesId
-            ? `This will replace "${supersedesFileName}" the old file stays on record as superseded, not deleted.`
-            : "Attach a document a signed policy, training record, or plan to a specific control."}
+            ? `This will replace "${supersedesFileName}" — the old file stays on record as superseded, not deleted.`
+            : "Attach a document to a real control from the framework below — every option here is a genuine, defined control, never free text."}
         </div>
 
         <form onSubmit={handleSubmit}>
-          {!supersedesId && (
-            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-              <button type="button" className={`btn-tab ${mode === "existing" ? "active" : ""}`} onClick={() => setMode("existing")} style={{ fontSize: 12, padding: "6px 12px" }}>
-                Pick a scanned control
-              </button>
-              <button type="button" className={`btn-tab ${mode === "custom" ? "active" : ""}`} onClick={() => setMode("custom")} style={{ fontSize: 12, padding: "6px 12px" }}>
-                Enter a control manually
-              </button>
-            </div>
-          )}
-
-          {mode === "existing" && !supersedesId ? (
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 5 }}>Control (from live CIS/ISO mapping)</div>
-              <select className="input" style={{ width: "100%" }} value={controlId} onChange={(e) => setControlId(e.target.value)}>
-                {controls.map((c) => (
-                  <option key={c.controlId} value={c.controlId}>{c.controlId} — {c.title || c.domain}</option>
+          <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 5 }}>Framework</div>
+              <select
+                className="input"
+                style={{ width: "100%" }}
+                value={framework}
+                onChange={(e) => setFramework(e.target.value)}
+                disabled={!!supersedesId}
+              >
+                {frameworks.map((f) => (
+                  <option key={f.id} value={f.id}>{f.label}</option>
                 ))}
               </select>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 5 }}>Control</div>
+            {loadingControls ? (
+              <div style={{ fontSize: 12, color: "var(--muted)", padding: "8px 0" }}>Loading real control list...</div>
+            ) : (
+              <select
+                className="input"
+                style={{ width: "100%" }}
+                value={controlId}
+                onChange={(e) => setControlId(e.target.value)}
+                disabled={!!supersedesId}
+              >
+                {controls.map((c) => (
+                  <option key={c.controlId} value={c.controlId}>
+                    {c.controlId} — {c.controlName}{!c.scannable ? " (no scan coverage)" : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+            {selectedControl && !selectedControl.scannable && (
               <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4 }}>
-                Only technical controls that already have at least one scanned check appear here. For
-                organizational controls (e.g., People Controls) with no technical fingerprint, use "Enter manually" instead.
+                This control has no automated scan coverage — human-attested evidence is the only proof possible for it.
               </div>
-            </div>
-          ) : (
-            <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 5 }}>Control ID</div>
-                <input className="input" style={{ width: "100%", boxSizing: "border-box" }} placeholder="e.g. 6.3"
-                  value={customControlId} onChange={(e) => setCustomControlId(e.target.value)} disabled={!!supersedesId} />
-              </div>
-              <div style={{ flex: 2 }}>
-                <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 5 }}>Control Name</div>
-                <input className="input" style={{ width: "100%", boxSizing: "border-box" }} placeholder="e.g. Information Security Awareness"
-                  value={customControlName} onChange={(e) => setCustomControlName(e.target.value)} disabled={!!supersedesId} />
-              </div>
-            </div>
-          )}
+            )}
+          </div>
 
           <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
             <div style={{ flex: 1 }}>
@@ -175,8 +205,8 @@ function UploadModal({ controls, onClose, onUploaded, presetControlId, presetCon
               style={{ padding: "8px 16px", borderRadius: 6, background: "transparent", border: "1px solid var(--line)", color: "var(--muted)", cursor: "pointer", fontSize: 13 }}>
               Cancel
             </button>
-            <button type="submit" disabled={uploading}
-              style={{ padding: "8px 18px", borderRadius: 6, background: "var(--accent)", border: "none", color: "#000", fontWeight: 700, cursor: "pointer", fontSize: 13, opacity: uploading ? 0.7 : 1 }}>
+            <button type="submit" disabled={uploading || loadingControls}
+              style={{ padding: "8px 18px", borderRadius: 6, background: "var(--accent)", border: "none", color: "#000", fontWeight: 700, cursor: "pointer", fontSize: 13, opacity: (uploading || loadingControls) ? 0.7 : 1 }}>
               {uploading ? "Uploading..." : supersedesId ? "Upload New Version" : "Upload"}
             </button>
           </div>
@@ -190,25 +220,25 @@ export default function ComplianceEvidence() {
   const { user } = useAuth();
   const canManage = user?.role === "admin" || user?.role === "compliance-officer";
 
-  const [view, setView] = useState("documents"); // "documents" or "coverage"
-  const [controls, setControls] = useState([]);
+  const [view, setView] = useState("documents");
+  const [frameworks, setFrameworks] = useState([]);
   const [evidence, setEvidence] = useState([]);
   const [coverage, setCoverage] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
-  const [uploadTarget, setUploadTarget] = useState(null); // null = closed, {} = new upload, {supersedesId,...} = new version
+  const [uploadTarget, setUploadTarget] = useState(null);
   const [exporting, setExporting] = useState(false);
 
   async function load() {
     try {
       setLoading(true);
       setErr("");
-      const [controlsRes, evidenceRes, coverageRes] = await Promise.all([
-        axios.get(`${API}/api/compliance-evidence/controls`),
+      const [frameworksRes, evidenceRes, coverageRes] = await Promise.all([
+        axios.get(`${API}/api/compliance-evidence/frameworks`),
         axios.get(`${API}/api/compliance-evidence`),
         axios.get(`${API}/api/compliance-evidence/coverage`),
       ]);
-      setControls(controlsRes.data?.data || []);
+      setFrameworks(frameworksRes.data?.data || []);
       setEvidence(evidenceRes.data?.data || []);
       setCoverage(coverageRes.data?.data || []);
     } catch (e) {
@@ -262,8 +292,8 @@ export default function ComplianceEvidence() {
   }
 
   const grouped = evidence.reduce((acc, e) => {
-    const key = e.controlId;
-    if (!acc[key]) acc[key] = { controlId: e.controlId, controlName: e.controlName, items: [] };
+    const key = `${e.framework || "iso27001"}::${e.controlId}`;
+    if (!acc[key]) acc[key] = { framework: e.framework || "iso27001", controlId: e.controlId, controlName: e.controlName, items: [] };
     acc[key].items.push(e);
     return acc;
   }, {});
@@ -292,7 +322,7 @@ export default function ComplianceEvidence() {
     >
       <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, maxWidth: 760 }}>
         Compliance evidence that no scanner can verify — signed policies, training records,
-        disaster-recovery plans — linked directly to the ISO 27001:2022 control they support.
+        disaster-recovery plans — linked directly to a real, defined control from the framework you select.
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
@@ -371,9 +401,12 @@ export default function ComplianceEvidence() {
 
       {!loading && view === "documents" &&
         groups.map((g) => (
-          <div key={g.controlId} className="card" style={{ marginBottom: 16, padding: 20 }}>
+          <div key={`${g.framework}::${g.controlId}`} className="card" style={{ marginBottom: 16, padding: 20 }}>
             <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 2 }}>
               {g.controlId} {g.controlName && `— ${g.controlName}`}
+              <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: "var(--surface)", border: "1px solid var(--line)", color: "var(--muted)", textTransform: "uppercase" }}>
+                {frameworks.find((f) => f.id === g.framework)?.label || g.framework}
+              </span>
             </div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>
               {g.items.length} document{g.items.length !== 1 ? "s" : ""}
@@ -427,6 +460,7 @@ export default function ComplianceEvidence() {
                                 onClick={() => setUploadTarget({
                                   supersedesId: item._id,
                                   supersedesFileName: item.originalFileName,
+                                  presetFramework: item.framework || "iso27001",
                                   presetControlId: item.controlId,
                                   presetControlName: item.controlName,
                                   presetCategory: item.category,
@@ -455,9 +489,10 @@ export default function ComplianceEvidence() {
 
       {uploadTarget && (
         <UploadModal
-          controls={controls}
+          frameworks={frameworks}
           supersedesId={uploadTarget.supersedesId}
           supersedesFileName={uploadTarget.supersedesFileName}
+          presetFramework={uploadTarget.presetFramework}
           presetControlId={uploadTarget.presetControlId}
           presetControlName={uploadTarget.presetControlName}
           presetCategory={uploadTarget.presetCategory}

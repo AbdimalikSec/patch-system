@@ -12,8 +12,13 @@ const mongoose = require("mongoose");
  */
 const ComplianceEvidenceSchema = new mongoose.Schema(
   {
-    controlId: { type: String, required: true },       // e.g. "A.6.3" or a free-text control name
-    controlName: { type: String, default: "" },          // human-readable label
+    // Which framework this control belongs to (e.g. "iso27001", "pci-dss").
+    // Kept alongside controlId because control NUMBERS are not unique
+    // across frameworks -- "8.2" in ISO 27001 and "8.2" in PCI-DSS are
+    // completely different requirements.
+    framework: { type: String, required: true, default: "iso27001" },
+    controlId: { type: String, required: true },
+    controlName: { type: String, default: "" },
     category: {
       type: String,
       enum: ["policy", "training-record", "risk-assessment", "disaster-recovery", "audit-report", "other"],

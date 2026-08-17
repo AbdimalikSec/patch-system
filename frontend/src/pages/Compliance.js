@@ -6,42 +6,42 @@ import { useAuth } from "../context/AuthContext";
 
 const API = process.env.REACT_APP_API_BASE || "http://localhost:5000";
 
-function ScoreGauge({ score }) {
-  const [animated, setAnimated] = useState(0);
-  useEffect(() => {
-    const t = setTimeout(() => setAnimated(score), 150);
-    return () => clearTimeout(t);
-  }, [score]);
-  const color = score <= 30 ? "hsl(130,60%,50%)" : score <= 60 ? "hsl(45,100%,50%)" : "hsl(350,100%,65%)";
-  const r = 15.9, circ = 2 * Math.PI * r, dash = (animated / 100) * circ;
+// ── Restrained palette: neutral everywhere, color reserved only for real
+// status — one red for failing, one green for passing. Nothing else in
+// this page should ever introduce a third color.
+const RED = "#C0392B";
+const RED_BG = "#FDEDEC";
+const GREEN = "#1E8449";
+const GREEN_BG = "#EAFAF1";
+const NEUTRAL_TEXT = "var(--text)";
+const NEUTRAL_MUTED = "var(--muted)";
+
+function StatusPill({ status }) {
+  const styles = {
+    "Compliant":     { bg: GREEN_BG, color: GREEN },
+    "Non-Compliant": { bg: RED_BG, color: RED },
+    "No Data":       { bg: "var(--surface)", color: "var(--muted)" },
+  };
+  const s = styles[status] || styles["No Data"];
   return (
-    <div style={{ position: "relative", width: 72, height: 72 }}>
-      <svg viewBox="0 0 36 36" style={{ width: "100%", height: "100%", transform: "rotate(-90deg)" }}>
-        <circle cx="18" cy="18" r={r} fill="transparent" stroke="var(--line)" strokeWidth="3" />
-        <circle cx="18" cy="18" r={r} fill="transparent" stroke={color} strokeWidth="3"
-          strokeDasharray={`${dash} ${circ - dash}`} strokeLinecap="round"
-          style={{ transition: "stroke-dasharray 1s cubic-bezier(0.4,0,0.2,1)" }} />
-      </svg>
-      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ fontSize: 14, fontWeight: 900, color }}>{score}%</div>
-      </div>
-    </div>
+    <span style={{
+      fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 4,
+      background: s.bg, color: s.color, letterSpacing: "0.02em",
+    }}>{status}</span>
   );
 }
 
-function StatusBadge({ status }) {
-  const colors = {
-    "Compliant":     { bg: "hsla(130,60%,50%,0.15)", border: "hsl(130,60%,50%)", text: "hsl(130,60%,50%)" },
-    "Non-Compliant": { bg: "hsla(350,100%,65%,0.15)", border: "hsl(350,100%,65%)", text: "hsl(350,100%,65%)" },
-    "No Data":       { bg: "hsla(0,0%,60%,0.1)",      border: "hsl(0,0%,50%)",    text: "hsl(0,0%,60%)"    },
-  };
-  const c = colors[status] || colors["No Data"];
+// Flat progress bar replacing the circular gauge — matches how real
+// compliance dashboards (Intune, Qualys) present a percentage: plainly.
+function ScoreBar({ score }) {
+  const color = score === 0 ? GREEN : score <= 30 ? "#D68910" : RED;
   return (
-    <span style={{
-      fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 4,
-      background: c.bg, border: `1px solid ${c.border}`, color: c.text,
-      letterSpacing: "0.05em", textTransform: "uppercase", whiteSpace: "nowrap"
-    }}>{status}</span>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 140 }}>
+      <div style={{ flex: 1, height: 6, background: "var(--line)", borderRadius: 3, overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${Math.min(score, 100)}%`, background: color, borderRadius: 3 }} />
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: NEUTRAL_TEXT, minWidth: 34, textAlign: "right" }}>{score}%</div>
+    </div>
   );
 }
 
@@ -59,62 +59,63 @@ function AssetCard({ row, checks, loadingChecks, isAuditor }) {
   const displayed   = showAll ? failedArr : failedArr.slice(0, 5);
 
   return (
-    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "18px 24px", borderBottom: expanded ? "1px solid var(--line)" : "none" }}>
-        <ScoreGauge score={score} />
+    <div className="card" style={{ padding: 0, overflow: "hidden", border: "1px solid var(--line)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "16px 20px", borderBottom: expanded ? "1px solid var(--line)" : "none" }}>
         <div style={{ flex: 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
             {isAuditor
-              ? <span style={{ fontWeight: 800, fontSize: 16 }}>{row.hostname}</span>
-              : <Link to={`/asset/${encodeURIComponent(row.hostname)}`} style={{ fontWeight: 800, fontSize: 16, color: "var(--text)", textDecoration: "none" }}>{row.hostname}</Link>
+              ? <span style={{ fontWeight: 700, fontSize: 14 }}>{row.hostname}</span>
+              : <Link to={`/asset/${encodeURIComponent(row.hostname)}`} style={{ fontWeight: 700, fontSize: 14, color: "var(--text)", textDecoration: "none" }}>{row.hostname}</Link>
             }
-            <StatusBadge status={status} />
+            <StatusPill status={status} />
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ flex: 1, height: 6, background: "var(--line)", borderRadius: 3, overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${score}%`, background: score <= 30 ? "hsl(130,60%,50%)" : score <= 60 ? "hsl(45,100%,50%)" : "hsl(350,100%,65%)", borderRadius: 3, transition: "width 1s ease" }} />
-            </div>
-            <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>{failedCount} failed · {passedCount} passed · {checksArr.length} total</div>
-          </div>
+          <ScoreBar score={score} />
         </div>
-        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 22, fontWeight: 900, color: "hsl(350,100%,65%)" }}>{failedCount}</div>
-            <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Failed</div>
+        <div style={{ display: "flex", gap: 24, alignItems: "center" }}>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 17, fontWeight: 700, color: failedCount > 0 ? RED : NEUTRAL_TEXT }}>{failedCount}</div>
+            <div style={{ fontSize: 10, color: NEUTRAL_MUTED, textTransform: "uppercase" }}>Failed</div>
           </div>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 22, fontWeight: 900, color: "hsl(130,60%,50%)" }}>{passedCount}</div>
-            <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Passed</div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 17, fontWeight: 700, color: NEUTRAL_TEXT }}>{passedCount}</div>
+            <div style={{ fontSize: 10, color: NEUTRAL_MUTED, textTransform: "uppercase" }}>Passed</div>
           </div>
-          <button onClick={() => setExpanded(e => !e)} className="btn" style={{ padding: "6px 14px", fontSize: 12 }}>
+          <button onClick={() => setExpanded(e => !e)}
+            style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, borderRadius: 6, background: "var(--surface)", border: "1px solid var(--line)", color: "var(--text)", cursor: "pointer" }}>
             {expanded ? "Hide" : "Details"}
           </button>
         </div>
       </div>
       {expanded && (
-        <div style={{ padding: "16px 24px" }}>
+        <div style={{ padding: "14px 20px" }}>
           {loadingChecks && <div className="muted" style={{ fontSize: 13 }}>Loading checks...</div>}
           {!loadingChecks && failedArr.length === 0 && <div className="muted" style={{ fontSize: 13 }}>No failed checks found.</div>}
           {!loadingChecks && failedArr.length > 0 && (
             <>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: NEUTRAL_MUTED, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                 Failed Checks ({showAll ? failedArr.length : `showing 5 of ${failedArr.length}`})
               </div>
-              <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ display: "grid", gap: 1, border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
                 {displayed.map((c, i) => (
-                  <div key={i} style={{ padding: "10px 14px", background: "var(--surface)", borderRadius: 8, borderLeft: "3px solid hsl(350,100%,65%)", display: "flex", gap: 12, alignItems: "flex-start" }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", minWidth: 50, marginTop: 1 }}>#{c.checkId}</div>
+                  <div key={i} style={{ padding: "10px 14px", background: i % 2 === 0 ? "var(--panel)" : "var(--surface)", display: "flex", gap: 12, alignItems: "flex-start" }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: NEUTRAL_MUTED, minWidth: 46, marginTop: 1 }}>#{c.checkId}</div>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{c.title}</div>
-                      {c.rationale && <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.5 }}>{c.rationale.slice(0, 180)}{c.rationale.length > 180 ? "…" : ""}</div>}
+                      {c.rationale && <div style={{ fontSize: 11.5, color: NEUTRAL_MUTED, lineHeight: 1.5 }}>{c.rationale.slice(0, 180)}{c.rationale.length > 180 ? "…" : ""}</div>}
                     </div>
                   </div>
                 ))}
               </div>
               <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
-                {!showAll && failedArr.length > 5 && <button className="btn" onClick={() => setShowAll(true)} style={{ fontSize: 12 }}>Show all {failedArr.length} ↓</button>}
-                {showAll && <button className="btn" onClick={() => setShowAll(false)} style={{ fontSize: 12 }}>Show less ↑</button>}
-                {!isAuditor && <Link to={`/asset/${encodeURIComponent(row.hostname)}`} className="btn" style={{ fontSize: 12 }}>Full asset detail →</Link>}
+                {!showAll && failedArr.length > 5 && (
+                  <button onClick={() => setShowAll(true)} style={{ fontSize: 12, padding: "6px 12px", borderRadius: 6, background: "var(--surface)", border: "1px solid var(--line)", cursor: "pointer" }}>Show all {failedArr.length}</button>
+                )}
+                {showAll && (
+                  <button onClick={() => setShowAll(false)} style={{ fontSize: 12, padding: "6px 12px", borderRadius: 6, background: "var(--surface)", border: "1px solid var(--line)", cursor: "pointer" }}>Show less</button>
+                )}
+                {!isAuditor && (
+                  <Link to={`/asset/${encodeURIComponent(row.hostname)}`} style={{ fontSize: 12, padding: "6px 12px", borderRadius: 6, background: "var(--surface)", border: "1px solid var(--line)", color: "var(--text)", textDecoration: "none" }}>Full asset detail →</Link>
+                )}
               </div>
             </>
           )}
@@ -215,14 +216,13 @@ function buildPDFHtml(exportRows, checksMap, kpis, title) {
   </div>
   <div style="font-size:18px;font-weight:800;margin-bottom:24px;padding-bottom:12px;border-bottom:1px solid #e5e5e5;">Asset Compliance Details</div>
   ${assetSections}
-  <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e5e5;font-size:11px;color:#999;text-align:center;">Triarch — Intelligent Risk-Based Patch Management & Compliance Framework · ${date}</div>
+  <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e5e5;font-size:11px;color:#999;text-align:center;">Triarch - Intelligent Risk-Based Patch Management & Compliance Framework · ${date}</div>
 </body></html>`;
 }
 
 function buildISOPDFHtml(exportRows, checksMap, title) {
   const date = new Date().toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" });
 
-  // Collect all ISO-mapped checks across the selected hosts
   const allChecks = [];
   for (const row of exportRows) {
     const checks = checksMap[row.hostname] ?? [];
@@ -316,7 +316,7 @@ function buildISOPDFHtml(exportRows, checksMap, title) {
   </div>
   <div style="font-size:18px;font-weight:800;margin-bottom:24px;padding-bottom:12px;border-bottom:1px solid #e5e5e5;">ISO 27001 Domain Compliance Details</div>
   ${domainSections.length > 0 ? domainSections : `<div style="padding:40px;text-align:center;color:#999;">No ISO 27001 mapped checks found for the selected scope.</div>`}
-  <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e5e5;font-size:11px;color:#999;text-align:center;">Triarch — Intelligent Risk-Based Patch Management & Compliance Framework · ${date}</div>
+  <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e5e5;font-size:11px;color:#999;text-align:center;">Triarch - Intelligent Risk-Based Patch Management & Compliance Framework · ${date}</div>
 </body></html>`;
 }
 
@@ -332,11 +332,11 @@ function buildControlPDFHtml(matchingChecks, controlId, controlTitle) {
       <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:11px;font-weight:700;color:${c.result === "failed" ? "#dc2626" : "#16a34a"};text-transform:uppercase;">${c.result}</td>
     </tr>`).join("");
 
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Control ${controlId} Evidence - Triarch</title>
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Control ${controlId} Evidence - Triarch</title>
 <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#111;padding:40px;max-width:1100px;margin:0 auto;}@media print{body{padding:20px;}.no-print{display:none;}}</style>
 </head><body>
   <div style="margin-bottom:24px;">
-    <div style="font-size:22px;font-weight:900;">🛡 Triarch — ISO 27001:2022 Control ${controlId}</div>
+    <div style="font-size:22px;font-weight:900;">🛡 Triarch - ISO 27001:2022 Control ${controlId}</div>
     <div style="font-size:14px;color:#666;margin-top:4px;">${controlTitle || ""}</div>
     <div style="font-size:12px;color:#999;margin-top:8px;">Fleet-wide scan evidence · Generated ${date}</div>
   </div>
@@ -361,7 +361,7 @@ function buildControlPDFHtml(matchingChecks, controlId, controlTitle) {
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e5e5;font-size:11px;color:#999;text-align:center;">Triarch — Intelligent Risk-Based Patch Management & Compliance Framework · ${date}</div>
+  <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e5e5;font-size:11px;color:#999;text-align:center;">Triarch - Intelligent Risk-Based Patch Management & Compliance Framework · ${date}</div>
 </body></html>`;
 }
 
@@ -374,49 +374,49 @@ function DomainCard({ domain, checks, isAuditor }) {
   const score = total > 0 ? Math.round((failed / total) * 100) : 0;
 
   return (
-    <div key={domain} className="card" style={{ padding: 0, overflow: "hidden" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "16px 24px", cursor: "pointer" }}
+    <div key={domain} className="card" style={{ padding: 0, overflow: "hidden", border: "1px solid var(--line)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "14px 20px", cursor: "pointer" }}
         onClick={() => setOpen(o => !o)}>
-        <ScoreGauge score={score} />
         <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>{domain}</div>
-          <div style={{ fontSize: 11, color: "var(--muted)" }}>
-            {failed} failed · {passed} passed · {total} mapped checks
-          </div>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>{domain}</div>
+          <ScoreBar score={score} />
         </div>
-        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 20, fontWeight: 900, color: "hsl(350,100%,65%)" }}>{failed}</div>
-            <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase" }}>Failed</div>
+        <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: failed > 0 ? RED : NEUTRAL_TEXT }}>{failed}</div>
+            <div style={{ fontSize: 10, color: NEUTRAL_MUTED, textTransform: "uppercase" }}>Failed</div>
           </div>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 20, fontWeight: 900, color: "hsl(130,60%,50%)" }}>{passed}</div>
-            <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase" }}>Passed</div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: NEUTRAL_TEXT }}>{passed}</div>
+            <div style={{ fontSize: 10, color: NEUTRAL_MUTED, textTransform: "uppercase" }}>Passed</div>
           </div>
-          <button className="btn" style={{ padding: "6px 14px", fontSize: 12 }}>
+          <button style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, borderRadius: 6, background: "var(--surface)", border: "1px solid var(--line)", color: "var(--text)", cursor: "pointer" }}>
             {open ? "Hide" : "Details"}
           </button>
         </div>
       </div>
   {open && (
-  <div style={{ padding: "0 24px 16px", borderTop: "1px solid var(--line)" }}>
+  <div style={{ padding: "0 20px 16px", borderTop: "1px solid var(--line)" }}>
     <div style={{ display: "flex", gap: 6, marginTop: 12, marginBottom: 12 }}>
       {["failed", "passed"].map(r => (
         <button key={r} onClick={e => { e.stopPropagation(); setShowResult(r); }}
-          className={`btn-tab ${showResult === r ? "active" : ""}`}
-          style={{ fontSize: 11, padding: "5px 12px" }}>
+          style={{
+            fontSize: 11, padding: "5px 12px", borderRadius: 6, cursor: "pointer",
+            background: showResult === r ? "var(--text)" : "var(--surface)",
+            color: showResult === r ? "var(--panel)" : "var(--muted)",
+            border: "1px solid var(--line)",
+          }}>
           {r === "failed" ? `Failed (${checks.filter(c => c.result === "failed").length})` : `Passed (${checks.filter(c => c.result === "passed").length})`}
         </button>
       ))}
     </div>
-    <div style={{ display: "grid", gap: 8 }}>
+    <div style={{ display: "grid", gap: 1, border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
       {checks.filter(c => c.result === showResult).map((c, i) => (
         <div key={i} style={{
-          padding: "10px 14px", background: "var(--surface)", borderRadius: 8,
-          borderLeft: `3px solid ${showResult === "failed" ? "hsl(350,100%,65%)" : "hsl(130,60%,50%)"}`,
+          padding: "10px 14px", background: i % 2 === 0 ? "var(--panel)" : "var(--surface)",
           display: "flex", gap: 12, alignItems: "flex-start"
         }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", minWidth: 60, marginTop: 1, display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: NEUTRAL_MUTED, minWidth: 44, marginTop: 1 }}>
             {c.iso27001.control}
             <button
               title={`Export fleet-wide evidence for control ${c.iso27001.control}`}
@@ -428,7 +428,7 @@ function DomainCard({ domain, checks, isAuditor }) {
                 win.document.close();
               }}
               style={{
-                fontSize: 9, padding: "1px 5px", borderRadius: 3, cursor: "pointer",
+                fontSize: 9, padding: "1px 5px", borderRadius: 3, cursor: "pointer", marginLeft: 4,
                 background: "var(--surface)", border: "1px solid var(--line)", color: "var(--muted)",
               }}
             >
@@ -436,8 +436,8 @@ function DomainCard({ domain, checks, isAuditor }) {
             </button>
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 2 }}>{c.title}</div>
-            <div style={{ fontSize: 11, color: "var(--muted)" }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{c.title}</div>
+            <div style={{ fontSize: 11.5, color: NEUTRAL_MUTED }}>
               Asset: {c.assetHostname} · Check #{c.checkId}
             </div>
           </div>
@@ -477,26 +477,21 @@ function ISOView({ checksMap, rows, isAuditor }) {
 
   return (
     <div>
-      <div className="kpis" style={{ marginBottom: 24 }}>
-        <div className="card">
-          <div className="cardLabel">ISO 27001 Domains Covered</div>
-          <div className="cardValue">{byDomain.length}</div>
-        </div>
-        <div className="card">
-          <div className="cardLabel">Mapped Checks</div>
-          <div className="cardValue">{allChecks.length}</div>
-        </div>
-        <div className="card">
-          <div className="cardLabel">Failed (ISO-mapped)</div>
-          <div className="cardValue" style={{ color: "hsl(350,100%,65%)" }}>{mappedFailed}</div>
-        </div>
-        <div className="card">
-          <div className="cardLabel">Passed (ISO-mapped)</div>
-          <div className="cardValue" style={{ color: "hsl(130,60%,50%)" }}>{mappedPassed}</div>
-        </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+        {[
+          ["ISO Domains Covered", byDomain.length, NEUTRAL_TEXT],
+          ["Mapped Checks", allChecks.length, NEUTRAL_TEXT],
+          ["Failed (mapped)", mappedFailed, mappedFailed > 0 ? RED : NEUTRAL_TEXT],
+          ["Passed (mapped)", mappedPassed, NEUTRAL_TEXT],
+        ].map(([label, val, color]) => (
+          <div key={label} className="card" style={{ padding: "14px 16px", border: "1px solid var(--line)" }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: NEUTRAL_MUTED, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>{label}</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color }}>{val}</div>
+          </div>
+        ))}
       </div>
 
-      <div style={{ display: "grid", gap: 12 }}>
+      <div style={{ display: "grid", gap: 10 }}>
         {byDomain.map(({ domain, checks }) => (
           <DomainCard key={domain} domain={domain} checks={checks} isAuditor={isAuditor} />
         ))}
@@ -521,8 +516,15 @@ export default function Compliance() {
   const [loadingChecks, setLoadingChecks] = useState(false);
   const [q, setQ]                     = useState("");
   const [err, setErr]                 = useState("");
-  const [exportTarget, setExportTarget] = useState("all"); // "all" or hostname
+  const [exportTarget, setExportTarget] = useState("all");
   const [framework, setFramework] = useState("cis");
+  const [availableFrameworks, setAvailableFrameworks] = useState([]);
+
+  useEffect(() => {
+    axios.get(`${API}/api/compliance-evidence/frameworks`)
+      .then((res) => setAvailableFrameworks(res.data?.data || []))
+      .catch(() => setAvailableFrameworks([]));
+  }, []);
 
   async function loadSummary() {
     try {
@@ -531,7 +533,7 @@ export default function Compliance() {
       const res  = await axios.get(`${API}/api/dashboard/compliance/summary`);
       const data = res.data?.data || [];
       setRows(data);
-      loadAllChecks(data.map(r => r.hostname));
+      loadAllChecks(data.map(r => r.hostname), framework);
     } catch (e) {
       setErr(e?.message || "Failed to load");
     } finally {
@@ -539,12 +541,14 @@ export default function Compliance() {
     }
   }
 
-  async function loadAllChecks(hostnames) {
+  async function loadAllChecks(hostnames, forFramework) {
     setLoadingChecks(true);
     const results = {};
     await Promise.all(hostnames.map(async h => {
       try {
-        const res = await axios.get(`${API}/api/compliance/checks/${encodeURIComponent(h)}`);
+        const res = await axios.get(`${API}/api/compliance/checks/${encodeURIComponent(h)}`, {
+          params: forFramework && forFramework !== "cis" ? { framework: forFramework } : undefined,
+        });
         results[h] = res.data?.data || [];
       } catch { results[h] = []; }
     }));
@@ -553,6 +557,11 @@ export default function Compliance() {
   }
 
   useEffect(() => { loadSummary(); }, []);
+
+  useEffect(() => {
+    if (rows.length > 0) loadAllChecks(rows.map(r => r.hostname), framework);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [framework]);
 
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
@@ -590,7 +599,7 @@ export default function Compliance() {
 
     const win = window.open("", "_blank");
 
-    if (framework === "iso") {
+    if (framework !== "cis") {
       const title = exportTarget === "all"
         ? "ISO 27001 Compliance Audit Report — All Assets"
         : `ISO 27001 Compliance Report — ${exportTarget}`;
@@ -610,49 +619,62 @@ export default function Compliance() {
       title="CIS Compliance"
       rightControls={
         <>
-           <input className="input" placeholder="Search hostname..." value={q} onChange={e => setQ(e.target.value)} />
+           <input className="input" placeholder="Search hostname..." value={q} onChange={e => setQ(e.target.value)}
+             style={{ fontSize: 13 }} />
           <div style={{ display: "flex", gap: 0, borderRadius: 8, overflow: "hidden", border: "1px solid var(--line)" }}>
-            {[["cis", "CIS Benchmark"], ["iso", "ISO 27001"]].map(([key, label]) => (
-              <button key={key} onClick={() => setFramework(key)}
+            <button onClick={() => setFramework("cis")}
+              style={{
+                padding: "7px 16px", fontSize: 12, fontWeight: 600, cursor: "pointer", border: "none",
+                background: framework === "cis" ? "var(--text)" : "transparent",
+                color: framework === "cis" ? "var(--panel)" : "var(--muted)",
+              }}>
+              CIS Benchmark
+            </button>
+            {availableFrameworks.map((f) => (
+              <button key={f.id} onClick={() => setFramework(f.id)}
                 style={{
-                  padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", border: "none",
-                  background: framework === key ? "var(--accent)" : "transparent",
-                  color: framework === key ? "#fff" : "var(--muted)",
+                  padding: "7px 16px", fontSize: 12, fontWeight: 600, cursor: "pointer", border: "none",
+                  background: framework === f.id ? "var(--text)" : "transparent",
+                  color: framework === f.id ? "var(--panel)" : "var(--muted)",
                 }}>
-                {label}
+                {f.label}
               </button>
             ))}
           </div>
-          <button className="btn" onClick={loadSummary}>Refresh</button>
-          <select className="input" value={exportTarget} onChange={e => setExportTarget(e.target.value)} style={{ minWidth: 160 }}>
+          <button className="btn" onClick={loadSummary} style={{ fontSize: 12 }}>Refresh</button>
+          <select className="input" value={exportTarget} onChange={e => setExportTarget(e.target.value)} style={{ minWidth: 150, fontSize: 13 }}>
             <option value="all">All Assets</option>
             {rows.map(r => <option key={r.hostname} value={r.hostname}>{r.hostname}</option>)}
           </select>
-          <button className="btn" onClick={handleExport}>Export PDF</button>
+          <button className="btn" onClick={handleExport} style={{ fontSize: 12 }}>Export PDF</button>
         </>
       }
     >
-      {err && <div style={{ color: "crimson", marginBottom: 16 }}>{err}</div>}
+      {err && <div style={{ color: RED, marginBottom: 16, fontSize: 13 }}>{err}</div>}
       {kpis && (
-        <div className="kpis" style={{ marginBottom: 24 }}>
-          <div className="card"><div className="cardLabel">Fleet Avg Score</div>
-            <div className="cardValue" style={{ color: kpis.avgScore >= 70 ? "hsl(130,60%,50%)" : kpis.avgScore >= 40 ? "hsl(45,100%,50%)" : "hsl(350,100%,65%)" }}>{kpis.avgScore}%</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
+          <div className="card" style={{ padding: "14px 16px", border: "1px solid var(--line)" }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: NEUTRAL_MUTED, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Fleet Avg Score</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: kpis.avgScore >= 70 ? RED : NEUTRAL_TEXT }}>{kpis.avgScore}%</div>
           </div>
-          <div className="card"><div className="cardLabel">Non-Compliant Assets</div>
-            <div className="cardValue" style={{ color: kpis.nonCompliant > 0 ? "hsl(350,100%,65%)" : "inherit" }}>{kpis.nonCompliant} / {rows.length}</div>
+          <div className="card" style={{ padding: "14px 16px", border: "1px solid var(--line)" }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: NEUTRAL_MUTED, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Non-Compliant Assets</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: kpis.nonCompliant > 0 ? RED : NEUTRAL_TEXT }}>{kpis.nonCompliant} / {rows.length}</div>
           </div>
-          <div className="card"><div className="cardLabel">Total Failed Checks</div>
-            <div className="cardValue" style={{ color: "hsl(350,100%,65%)" }}>{kpis.totalFailed}</div>
+          <div className="card" style={{ padding: "14px 16px", border: "1px solid var(--line)" }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: NEUTRAL_MUTED, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Total Failed Checks</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: kpis.totalFailed > 0 ? RED : NEUTRAL_TEXT }}>{kpis.totalFailed}</div>
           </div>
-          <div className="card"><div className="cardLabel">Total Checks Evaluated</div>
-            <div className="cardValue">{kpis.totalChecks}</div>
-            {kpis.totalChecks > 0 && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>{kpis.totalPassed} passed · {kpis.totalFailed} failed</div>}
+          <div className="card" style={{ padding: "14px 16px", border: "1px solid var(--line)" }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: NEUTRAL_MUTED, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Total Checks Evaluated</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: NEUTRAL_TEXT }}>{kpis.totalChecks}</div>
+            {kpis.totalChecks > 0 && <div style={{ fontSize: 11, color: NEUTRAL_MUTED, marginTop: 4 }}>{kpis.totalPassed} passed · {kpis.totalFailed} failed</div>}
           </div>
         </div>
       )}
       {loadingMain && <div className="muted">Loading compliance data...</div>}
       {!loadingMain && (
-        <div style={{ display: "grid", gap: 16 }}>
+        <div style={{ display: "grid", gap: 10 }}>
            {framework === "cis"
             ? sortedFiltered.map(row => (
                 <AssetCard key={row.hostname} row={row} checks={checksMap[row.hostname]}

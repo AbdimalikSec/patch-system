@@ -47,8 +47,14 @@ async function deployOnePackage(hostname, pkg, triggeredBy, triggeredById) {
     const config = SSH_CONFIG[hostKey];
     const ssh = new NodeSSH();
 
-    try {
-      await ssh.connect(config);
+      try {
+      // A hung connection attempt (e.g. a firewall silently dropping
+      // packets, rather than cleanly refusing) would otherwise freeze here
+      // indefinitely -- and since deployAllMissingForHost() runs items
+      // sequentially, one stuck connection would silently block every
+      // remaining package in a "Patch All" run, with no AgentCommand record
+      // ever created for them to even show as failed.
+      await ssh.connect({ ...config, readyTimeout: 15000 });
 
       const pkgName = pkg.split("/")[0].trim();
 

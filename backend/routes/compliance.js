@@ -22,20 +22,29 @@ router.get("/latest/:hostname", requireRole("admin", "compliance-officer", "anal
   }
 });
 
-// GET /api/compliance/checks/:hostname
-// Returns all compliance checks for an asset, sorted failed first
 router.get("/checks/:hostname", requireRole("admin", "compliance-officer", "analyst", "auditor"), async (req, res) => {
   try {
     const rx = new RegExp(`^${escapeRegex(req.params.hostname)}$`, "i");
     const checks = await ComplianceCheck.find({ assetHostname: { $regex: rx } })
       .sort({ result: 1, checkId: 1 })
       .lean();
-    const { getISOControl } = require("../utils/isoMapping");
-    const enriched = checks.map(c => ({
-      ...c,
-      iso27001: getISOControl(c.title),
-    }));
-    res.json({ ok: true, count: enriched.length, data: enriched });
+
+    // ?framework=X selects which framework's mapping to attach (defaults to
+    // ISO for backward compatibility with anything still expecting the
+    // original response shape). frameworkMatch is the new, generic field
+    // any framework's view can read; iso27001 stays populated exactly as
+    // before so nothing already working ever breaks.
+    const framework = req.query.framework || "iso27001";
+    const { getControlForCheckTitle } = require("../utils/frameworkMapping");
+    const enriched = checks.map(c => {
+      const match = getControlForCheckTitle(framework, c.title);
+      return {
+        ...c,
+        frameworkMatch: match,
+        iso27001: framework === "iso27001" ? match : c.iso27001,
+      };
+    });
+    res.json({ ok: true, count: enriched.length, data: enriched, framework });
   } catch (e) {
     console.error(e);
     res.status(500).json({ ok: false, error: "server_error" });

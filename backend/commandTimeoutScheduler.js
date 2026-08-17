@@ -22,7 +22,10 @@ async function checkStuckCommands() {
     const stuck = await AgentCommand.find({
       $or: [
         { status: "pending", createdAt: { $lte: pendingCutoff } },
-        { status: "running", createdAt: { $lte: runningCutoff } },
+        // updatedAt reflects the moment status actually flipped to
+        // "running", not the original click -- so this measures real
+        // install time, not time-since-queued.
+        { status: "running", updatedAt: { $lte: runningCutoff } },
       ],
     }).lean();
 
