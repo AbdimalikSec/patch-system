@@ -241,6 +241,17 @@ Write-Log "RiskPatch Agent started on \$HOSTNAME"
 while ($true) { $commands = Poll-Commands; foreach ($cmd in $commands) { $cmdType = if ($cmd.type) { $cmd.type } else { "patch" }; if ($cmdType -eq "restart" -or $cmd.kb -eq "RESTART") { Report-Result $cmd._id "success" "Restart scheduled"; Start-Sleep -Seconds 2; shutdown /r /t 60 /c "RiskPatch restart" } else { Report-Result $cmd._id "running" "Download and install starting now..."; $result = Install-KB $cmd.kb; $status = if ($result.success) { "success" } else { "failed" }; Report-Result $cmd._id $status $result.output } }; Start-Sleep -Seconds 30 }
 '@ | Set-Content C:\\RiskPatch\\agent\\RiskPatch-Agent.ps1
 
+# 4.5 Disable native Windows Update auto-install, so RiskPatch becomes the
+# sole authority over when this machine actually gets patched -- otherwise
+# Windows could quietly download, install, and reboot entirely on its own
+# schedule, invisible to and uncoordinated with the tool meant to manage it.
+# This does NOT fully disable Windows Update -- a human can still manually
+# check in Settings; it only removes automatic, unattended installation.
+\$auPath = "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU"
+if (!(Test-Path \$auPath)) { New-Item -Path \$auPath -Force | Out-Null }
+Set-ItemProperty -Path \$auPath -Name "NoAutoUpdate" -Value 0 -Type DWord
+Set-ItemProperty -Path \$auPath -Name "AUOptions" -Value 2 -Type DWord
+
 # 5. Register scheduled tasks
 \$collAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -NonInteractive -WindowStyle Hidden -File C:\\RiskPatch\\collectors\\win_patch_collector.ps1"
 \$collTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date)

@@ -543,19 +543,6 @@ useEffect(() => {
     load();
   }, []);
 
-  // While anything is actively queued/running, keep re-fetching so each
-  // item's real state (queued -> running -> done/failed) becomes visible
-  // live, instead of only updating on a manual refresh -- reusing the
-  // same activeCommand data the backend already attaches per item.
-  useEffect(() => {
-    const hasActiveWork = grouped.some((g) =>
-      Object.values(g.activeCommands || {}).some((c) => c.status === "pending" || c.status === "running"),
-    );
-    if (!hasActiveWork) return;
-    const interval = setInterval(load, 5000);
-    return () => clearInterval(interval);
-  }, [grouped]);
-
   const riskByHost = useMemo(() => {
     const map = new Map();
     for (const r of overviewRows) {
@@ -626,6 +613,15 @@ useEffect(() => {
         return (a.hostname || "").localeCompare(b.hostname || "");
       });
   }, [rows, riskByHost, roleByHost]);
+
+    useEffect(() => {
+    const hasActiveWork = grouped.some((g) =>
+      Object.values(g.activeCommands || {}).some((c) => c.status === "pending" || c.status === "running"),
+    );
+    if (!hasActiveWork) return;
+    const interval = setInterval(load, 5000);
+    return () => clearInterval(interval);
+  }, [grouped]);
 
   const selectedGroup = useMemo(() => groups.find((gr) => gr._id === groupFilter) || null, [groups, groupFilter]);
 
