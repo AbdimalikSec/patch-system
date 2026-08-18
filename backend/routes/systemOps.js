@@ -8,7 +8,12 @@ const BACKEND_DIR = path.join(__dirname, "..");
 
 // ── Only these two jobs are exposed — no arbitrary script execution ─────────
 const JOBS = {
-  "compliance-rescan": "collectors_wazuh_indexer_sca.js",
+ // The real fix: this now points at auto_rescan_all.sh, which forces a
+  // fresh Wazuh SCA scan on every agent before pulling results -- the
+  // plain collector below only ever reads whatever's already sitting in
+  // the indexer, which could be hours old. This mismatch was the actual
+  // cause of "ran the rescan, saw zero change."
+  "compliance-rescan": "auto_rescan_all.sh",
   "cve-enrichment": "collectors_cve_enrichment.js",
 };
 
@@ -34,7 +39,10 @@ router.post("/run/:job", requireAuth, requireAdmin, async (req, res) => {
 
     // Spawned detached from the HTTP request — we respond immediately below,
     // the script keeps running and updates the job record when it finishes.
-    const child = spawn("node", [script], { cwd: BACKEND_DIR });
+     // .sh scripts need bash, not node -- auto_rescan_all.sh is a real shell
+    // script, unlike the two .js collectors this previously assumed.
+    const interpreter = script.endsWith(".sh") ? "bash" : "node";
+    const child = spawn(interpreter, [script], { cwd: BACKEND_DIR });
 
     let output = "";
     child.stdout.on("data", (d) => { output += d.toString(); });
