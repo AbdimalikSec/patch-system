@@ -155,10 +155,148 @@ function JobCard({ job }) {
   );
 }
 
+function QuickRescanCard() {
+  const [machines, setMachines] = useState([]);
+  const [selected, setSelected] = useState("");
+  const [status, setStatus] = useState(null);
+  const [starting, setStarting] = useState(false);
+  const [err, setErr] = useState("");
+  const [showOutput, setShowOutput] = useState(false);
+  const pollRef = useRef(null);
+
+  useEffect(() => {
+    axios.get(`${API}/api/machines`)
+      .then((res) => {
+        const list = res.data?.data || [];
+        setMachines(list);
+        if (list.length > 0) setSelected(list[0].hostname);
+      })
+      .catch(() => setMachines([]));
+  }, []);
+
+  async function loadStatus(hostname) {
+    if (!hostname) return null;
+    try {
+      const res = await axios.get(`${API}/api/system-ops/quick-rescan/${hostname}/status`);
+      setStatus(res.data?.job || null);
+      return res.data?.job || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  useEffect(() => {
+    clearInterval(pollRef.current);
+    setStatus(null);
+    if (selected) loadStatus(selected);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
+
+  function startPolling() {
+    clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      const j = await loadStatus(selected);
+      if (j && j.status !== "running") {
+        clearInterval(pollRef.current);
+      }
+    }, 3000);
+  }
+
+  async function handleRun() {
+    if (!selected) return;
+    try {
+      setStarting(true);
+      setErr("");
+      await axios.post(`${API}/api/system-ops/quick-rescan/${selected}`);
+      await loadStatus(selected);
+      startPolling();
+    } catch (e) {
+      setErr(e?.response?.data?.error || "Failed to start rescan");
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  const isRunning = status?.status === "running";
+
+  return (
+    <div className="card" style={{ padding: 20, border: "1px solid var(--accent)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+        <div>
+          <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>Quick Rescan — One Machine</div>
+          <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, maxWidth: 420 }}>
+            Forces a fresh Wazuh SCA scan for a single chosen machine and pulls the result immediately — ~90 seconds, instead of waiting for the full fleet cycle.
+          </div>
+        </div>
+        <StatusBadge status={status?.status} />
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+        <select
+          className="input"
+          value={selected}
+          onChange={(e) => setSelected(e.target.value)}
+          disabled={isRunning || starting}
+          style={{ minWidth: 180 }}
+        >
+          {machines.map((m) => (
+            <option key={m.hostname} value={m.hostname}>{m.hostname}</option>
+          ))}
+        </select>
+        <button
+          className="btn"
+          onClick={handleRun}
+          disabled={isRunning || starting || !selected}
+          style={{ padding: "8px 18px", fontSize: 13, opacity: isRunning || starting ? 0.5 : 1 }}
+        >
+          {isRunning ? "⟳ Running..." : starting ? "Starting..." : "▶ Rescan This Machine"}
+        </button>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>
+          Last run: {status?.completedAt ? timeAgo(status.completedAt) : status?.startedAt ? "in progress" : "never"}
+        </div>
+        {status?.output && (
+          <button
+            className="btn"
+            onClick={() => setShowOutput((s) => !s)}
+            style={{ padding: "5px 12px", fontSize: 11 }}
+          >
+            {showOutput ? "Hide Output" : "View Output"}
+          </button>
+        )}
+      </div>
+
+      {err && (
+        <div style={{ fontSize: 12, color: "hsl(350,100%,65%)", marginTop: 10 }}>{err}</div>
+      )}
+
+      {showOutput && status?.output && (
+        <pre
+          style={{
+            background: "var(--surface)",
+            border: "1px solid var(--line)",
+            borderRadius: 8,
+            padding: 14,
+            fontSize: 11,
+            lineHeight: 1.5,
+            overflow: "auto",
+            maxHeight: 260,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            marginTop: 14,
+          }}
+        >
+          {status.output}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 export default function SystemOperations() {
   return (
     <Layout title="System Operations">
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <QuickRescanCard />
         {JOBS.map((job) => (
           <JobCard key={job.key} job={job} />
         ))}

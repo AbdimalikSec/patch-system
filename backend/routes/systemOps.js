@@ -3,7 +3,7 @@ const { requireAuth, requireAdmin } = require("../middleware/authMiddleware");
 const { spawn } = require("child_process");
 const path = require("path");
 const SystemJob = require("../models/SystemJob");
-
+const Agent = require("../models/Agent");
 const BACKEND_DIR = path.join(__dirname, "..");
 
 // ── Only these two jobs are exposed — no arbitrary script execution ─────────
@@ -73,6 +73,58 @@ router.get("/status/:job", requireAuth, requireAdmin, async (req, res) => {
     const latest = await SystemJob.findOne({ jobName: req.params.job })
       .sort({ startedAt: -1 })
       .lean();
+    res.json({ ok: true, job: latest || null });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ── POST /api/system-ops/quick-rescan/:hostname — fast, single-machine
+// rescan for exactly one agent, reusing the already-proven
+// remediate_and_rescan.sh script instead of the slow, all-agents cycle.
+router.post("/quick-rescan/:hostname", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const hostname = req.params.hostname;
+    const agent = await Agent.findOne({ hostname: new RegExp(`^${hostname}$`, "i") }).lean();
+    if (!agent || !agent.wazuhId) {
+      return res.status(404).json({ ok: false, error: `No enrolled agent found for "${hostname}"` });
+    }
+
+    const jobName = `quick-rescan-${hostname}`;
+    const alreadyRunning = await SystemJob.findOne({ jobName, status: "running" });
+    if (alreadyRunning) {
+      return res.status(409).json({ ok: false, error: "A rescan for this machine is already running" });
+    }
+
+    const job = await SystemJob.create({ jobName, status: "running", startedAt: new Date() });
+
+    const child = spawn("bash", ["remediate_and_rescan.sh", agent.wazuhId, hostname], { cwd: BACKEND_DIR });
+    let output = "";
+    child.stdout.on("data", (d) => { output += d.toString(); });
+    child.stderr.on("data", (d) => { output += d.toString(); });
+    child.on("close", async (code) => {
+      try {
+        await SystemJob.findByIdAndUpdate(job._id, {
+          status: code === 0 ? "success" : "failed",
+          output: output.slice(-4000),
+          completedAt: new Date(),
+        });
+      } catch (e) {
+        console.error("[system-ops] failed to record quick-rescan completion:", e.message);
+      }
+    });
+
+    res.json({ ok: true, jobId: job._id, message: `Quick rescan started for ${hostname}` });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ── GET /api/system-ops/quick-rescan/:hostname/status ────────────────────────
+router.get("/quick-rescan/:hostname/status", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const jobName = `quick-rescan-${req.params.hostname}`;
+    const latest = await SystemJob.findOne({ jobName }).sort({ startedAt: -1 }).lean();
     res.json({ ok: true, job: latest || null });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
